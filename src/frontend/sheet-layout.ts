@@ -8,7 +8,7 @@ export function observeSheetLayout(panel: HTMLDialogElement, toggle: HTMLButtonE
     let observedTable: HTMLTableElement | null = null;
     function fit() {
         frame = 0;
-        const table = content.querySelector('table');
+        const table = content.querySelector<HTMLTableElement>('.table-scroll > table');
         if (table !== observedTable) {
             resize.disconnect();
             resize.observe(workspace);

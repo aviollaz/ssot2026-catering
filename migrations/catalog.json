@@ -30,6 +30,16 @@
       "systemId": "ssot2026",
       "releaseId": "0005_update_schema",
       "releaseHash": "ff2483df30c982a27f7b7eece88d2f3a5a81f045f197f3580f5c0e4052847f34"
+    },
+    {
+      "systemId": "ssot2026",
+      "releaseId": "0006_update_schema",
+      "releaseHash": "0c7278faf497031122c2d5ad625488eb260e705a929a5e4a3bae16b963099052"
+    },
+    {
+      "systemId": "ssot2026",
+      "releaseId": "0007_update_schema",
+      "releaseHash": "5d65b2e1c9e31a607dd143a9bb2437df7f446c1729e26a38656cf3c8f84d103f"
     }
   ],
   "migrations": [
@@ -607,6 +617,624 @@
         "after": []
       },
       "migrationHash": "f3f931d43c52f56c441de98ddb3c03484a307851aa31a27f56c2f0d6d1af8c03"
+    },
+    {
+      "migration": {
+        "id": "0006_update_schema",
+        "from": {
+          "systemId": "ssot2026",
+          "releaseId": "0005_update_schema",
+          "releaseHash": "ff2483df30c982a27f7b7eece88d2f3a5a81f045f197f3580f5c0e4052847f34"
+        },
+        "to": {
+          "systemId": "ssot2026",
+          "releaseId": "0006_update_schema",
+          "releaseHash": "0c7278faf497031122c2d5ad625488eb260e705a929a5e4a3bae16b963099052"
+        },
+        "description": "",
+        "before": [],
+        "steps": [
+          {
+            "id": "001_remove_constraint_materias_materias_departamento_fkey",
+            "run": {
+              "name": "001_remove_constraint_materias_materias_departamento_fkey.sql",
+              "kind": "sql",
+              "contentHash": "dd8960fc70aeb07d50a8e507a6b98bbca2bc0a5d9a4485732097c82a3a2b82ba"
+            }
+          },
+          {
+            "id": "002_remove_constraint_materias_materias_plan_fkey",
+            "run": {
+              "name": "002_remove_constraint_materias_materias_plan_fkey.sql",
+              "kind": "sql",
+              "contentHash": "4428d66ffe04db71fcd9b09562613c3ad60775e32f06f26e2121fc0eb7348f64"
+            }
+          },
+          {
+            "id": "003_remove_constraint_enrolamientos_enrolamientos_estudiante_fkey",
+            "run": {
+              "name": "003_remove_constraint_enrolamientos_enrolamientos_estudiante_fkey.sql",
+              "kind": "sql",
+              "contentHash": "eab1a1f8c79fa9645a6a7772b0ec6f958e1f72b9feb46a1f1f991622ff9c7906"
+            }
+          },
+          {
+            "id": "004_remove_constraint_enrolamientos_enrolamientos_materia_fkey",
+            "run": {
+              "name": "004_remove_constraint_enrolamientos_enrolamientos_materia_fkey.sql",
+              "kind": "sql",
+              "contentHash": "9993d60bf5678d5b07f2ed0c8b7cb3bd5f7f5b9cc32e9426e226c19f4b9435a9"
+            }
+          },
+          {
+            "id": "005_remove_constraint_departamentos_departamentos_pabellon_fkey",
+            "run": {
+              "name": "005_remove_constraint_departamentos_departamentos_pabellon_fkey.sql",
+              "kind": "sql",
+              "contentHash": "feef2e2742e6385316e66ff79200f1eed7f949af75445f581eca7d1565085528"
+            }
+          }
+        ],
+        "after": []
+      },
+      "migrationHash": "5419fc9c0798c7b91c35404c4de979d840586f233b5dfa07b3629841b074c734"
+    },
+    {
+      "migration": {
+        "id": "0007_update_schema",
+        "from": {
+          "systemId": "ssot2026",
+          "releaseId": "0006_update_schema",
+          "releaseHash": "0c7278faf497031122c2d5ad625488eb260e705a929a5e4a3bae16b963099052"
+        },
+        "to": {
+          "systemId": "ssot2026",
+          "releaseId": "0007_update_schema",
+          "releaseHash": "5d65b2e1c9e31a607dd143a9bb2437df7f446c1729e26a38656cf3c8f84d103f"
+        },
+        "description": "",
+        "before": [],
+        "steps": [
+          {
+            "id": "001_add_table_platos",
+            "run": {
+              "name": "001_add_table_platos.sql",
+              "kind": "sql",
+              "contentHash": "714745b0ece05fd1035bd123fd5e13fd95b12a48796272f705f8582cdf6bd055"
+            }
+          },
+          {
+            "id": "002_add_table_pedido_platos",
+            "run": {
+              "name": "002_add_table_pedido_platos.sql",
+              "kind": "sql",
+              "contentHash": "57e0d96008cd19d0094606315b470a3e2231e1b7a9b18bafb3624af8ff0bbfc5"
+            }
+          },
+          {
+            "id": "003_add_table_servicio_platos",
+            "run": {
+              "name": "003_add_table_servicio_platos.sql",
+              "kind": "sql",
+              "contentHash": "d2e1acd2f9b10fc00117896a56cd25bc73b367d6bae36dfb08319f44d54c054b"
+            }
+          },
+          {
+            "id": "004_add_table_pedidos",
+            "run": {
+              "name": "004_add_table_pedidos.sql",
+              "kind": "sql",
+              "contentHash": "968009c6d0d9a5c346c1ec45be83334a795e821cbb5fdf97021f3280fc511415"
+            }
+          },
+          {
+            "id": "005_add_table_recetas",
+            "run": {
+              "name": "005_add_table_recetas.sql",
+              "kind": "sql",
+              "contentHash": "e5611daed0544ea99dc13c89c632f6ac192dacb425315803f4ddd2c194e01f57"
+            }
+          },
+          {
+            "id": "006_add_table_servicios",
+            "run": {
+              "name": "006_add_table_servicios.sql",
+              "kind": "sql",
+              "contentHash": "7f51149299e2f4ca1d040a154b3aee937205470a5c8dae7e483ec58b11d9a672"
+            }
+          },
+          {
+            "id": "007_add_table_ingredientes",
+            "run": {
+              "name": "007_add_table_ingredientes.sql",
+              "kind": "sql",
+              "contentHash": "9439618e4ce75b7fce475fc79e3cd5ddea72085b162efcb7ec3fa553948628d0"
+            }
+          },
+          {
+            "id": "008_add_column_servicios_activo",
+            "run": {
+              "name": "008_add_column_servicios_activo.sql",
+              "kind": "sql",
+              "contentHash": "38061ae7734b3f75b8ae012c5088aabe372b87635ccf087009b6499735094045"
+            }
+          },
+          {
+            "id": "009_add_column_ingredientes_nombre",
+            "run": {
+              "name": "009_add_column_ingredientes_nombre.sql",
+              "kind": "sql",
+              "contentHash": "c5dfaad6b4a8655c4a655509a9a820530929e0be9e680011e0587b36f138c5dd"
+            }
+          },
+          {
+            "id": "010_add_column_pedidos_personas",
+            "run": {
+              "name": "010_add_column_pedidos_personas.sql",
+              "kind": "sql",
+              "contentHash": "55931ebc6757b9e5c9e754c9b8f173a06302898af50bcc5f1bf677b394f40e4f"
+            }
+          },
+          {
+            "id": "011_add_column_servicios_precio_persona",
+            "run": {
+              "name": "011_add_column_servicios_precio_persona.sql",
+              "kind": "sql",
+              "contentHash": "a689016890e7f05744a2bb631e28eed6c3185377229fda4473eaba4ab1bdb6a5"
+            }
+          },
+          {
+            "id": "012_add_column_servicio_platos_cod_plato",
+            "run": {
+              "name": "012_add_column_servicio_platos_cod_plato.sql",
+              "kind": "sql",
+              "contentHash": "4e4ba5014122eae239bcdca4854e526026ea991badb41a2a61ed071c53d77341"
+            }
+          },
+          {
+            "id": "013_add_column_recetas_cantidad",
+            "run": {
+              "name": "013_add_column_recetas_cantidad.sql",
+              "kind": "sql",
+              "contentHash": "4b1826a1edbd4780bad07a2f0f38e118fed875b91450443556faafdb7d69004b"
+            }
+          },
+          {
+            "id": "014_add_column_pedidos_estado",
+            "run": {
+              "name": "014_add_column_pedidos_estado.sql",
+              "kind": "sql",
+              "contentHash": "818f0ab02dd6849138d410c441abd44b58f84dff4143028c97cc50ce6efc78c1"
+            }
+          },
+          {
+            "id": "015_add_column_pedidos_cod_servicio",
+            "run": {
+              "name": "015_add_column_pedidos_cod_servicio.sql",
+              "kind": "sql",
+              "contentHash": "e51f1e01544d2ee1ecae05e2130ebb6e485b00a217842dd1663718ad48f93388"
+            }
+          },
+          {
+            "id": "016_add_column_servicios_cod_servicio",
+            "run": {
+              "name": "016_add_column_servicios_cod_servicio.sql",
+              "kind": "sql",
+              "contentHash": "66715d810fe71cfadfdb3c5a790ea7b2368462727ec3078c7575f329ec88d111"
+            }
+          },
+          {
+            "id": "017_add_column_pedidos_total",
+            "run": {
+              "name": "017_add_column_pedidos_total.sql",
+              "kind": "sql",
+              "contentHash": "e4d629452deddb04a9573603543596b1014c5c441bfd1229c581c8cae1e0efcc"
+            }
+          },
+          {
+            "id": "018_add_column_pedido_platos_porciones",
+            "run": {
+              "name": "018_add_column_pedido_platos_porciones.sql",
+              "kind": "sql",
+              "contentHash": "2955e3f45394d9ddd27f4f9870ebd6968953b5844b48f449dd55c48ad518e100"
+            }
+          },
+          {
+            "id": "019_add_column_servicios_nombre",
+            "run": {
+              "name": "019_add_column_servicios_nombre.sql",
+              "kind": "sql",
+              "contentHash": "c535745557f6277e47dcf80557c9da6e21c56a2ba517b1029c238a7dfc58106b"
+            }
+          },
+          {
+            "id": "020_add_column_platos_cod_plato",
+            "run": {
+              "name": "020_add_column_platos_cod_plato.sql",
+              "kind": "sql",
+              "contentHash": "b563ec9480f42492f57ff2af2827eb588bbd0ee73e0cd73d49f8aefbe7020ce5"
+            }
+          },
+          {
+            "id": "021_add_column_pedidos_cliente_telefono",
+            "run": {
+              "name": "021_add_column_pedidos_cliente_telefono.sql",
+              "kind": "sql",
+              "contentHash": "41c2546f4782aa5ac062508cbed98559925ac19ab4cb5edc2961a9293f664db4"
+            }
+          },
+          {
+            "id": "022_add_column_servicios_descripcion",
+            "run": {
+              "name": "022_add_column_servicios_descripcion.sql",
+              "kind": "sql",
+              "contentHash": "2cd68eb236c87a5395bf9f6140192cc0f9e9d13c29e947bac8da1b71361808b5"
+            }
+          },
+          {
+            "id": "023_add_column_pedidos_fecha_evento",
+            "run": {
+              "name": "023_add_column_pedidos_fecha_evento.sql",
+              "kind": "sql",
+              "contentHash": "7c639887620467fa7df44351cc0fc2f8c2ee9c80a6037be527c8f4252e4b916a"
+            }
+          },
+          {
+            "id": "024_add_column_pedido_platos_precio_porcion",
+            "run": {
+              "name": "024_add_column_pedido_platos_precio_porcion.sql",
+              "kind": "sql",
+              "contentHash": "f71ff893fc88e9ace1451843027047fd91290eccb960400f0766a13908e62585"
+            }
+          },
+          {
+            "id": "025_add_column_pedidos_observaciones",
+            "run": {
+              "name": "025_add_column_pedidos_observaciones.sql",
+              "kind": "sql",
+              "contentHash": "e11897b7d3f1568a7cdcccbc29a3c9117a4fe599c0c47fa31a95fe36e31fe2ac"
+            }
+          },
+          {
+            "id": "026_add_column_platos_precio_porcion",
+            "run": {
+              "name": "026_add_column_platos_precio_porcion.sql",
+              "kind": "sql",
+              "contentHash": "a960164d0b86f76d760218e1d76ad55cd9916e6eed8a7817a8314f3ba42ce2a0"
+            }
+          },
+          {
+            "id": "027_add_column_servicio_platos_porciones_por_persona",
+            "run": {
+              "name": "027_add_column_servicio_platos_porciones_por_persona.sql",
+              "kind": "sql",
+              "contentHash": "8548b4026119eefb7d63f7ae722016f98fd634200affc552c9bc9b3415a41953"
+            }
+          },
+          {
+            "id": "028_add_column_ingredientes_unidad",
+            "run": {
+              "name": "028_add_column_ingredientes_unidad.sql",
+              "kind": "sql",
+              "contentHash": "bfe018ea0b5347f61667fe5b001c376a4894ef3b034b1acfdd64b6391c3581ff"
+            }
+          },
+          {
+            "id": "029_add_column_pedidos_direccion",
+            "run": {
+              "name": "029_add_column_pedidos_direccion.sql",
+              "kind": "sql",
+              "contentHash": "d66e1d50a6e99d031e4e88f6eb2fe6c607e012e31f549a49b7d9e44e6a1cba5f"
+            }
+          },
+          {
+            "id": "030_add_column_recetas_cod_ing",
+            "run": {
+              "name": "030_add_column_recetas_cod_ing.sql",
+              "kind": "sql",
+              "contentHash": "99f30e0b13b937f21ae10ddfcd83c724716e3855ce0096e304ea52d725cc4141"
+            }
+          },
+          {
+            "id": "031_add_column_ingredientes_cod_ing",
+            "run": {
+              "name": "031_add_column_ingredientes_cod_ing.sql",
+              "kind": "sql",
+              "contentHash": "31d13de310a5f4e0b685e3e904473dca83237cbc3c3d7af74bab20f8adac9cfc"
+            }
+          },
+          {
+            "id": "032_add_column_platos_categoria",
+            "run": {
+              "name": "032_add_column_platos_categoria.sql",
+              "kind": "sql",
+              "contentHash": "a8bee9a51db703a4a02897e77fb930b418dcffd28098471af64f8bf306df49f0"
+            }
+          },
+          {
+            "id": "033_add_column_pedidos_cliente_email",
+            "run": {
+              "name": "033_add_column_pedidos_cliente_email.sql",
+              "kind": "sql",
+              "contentHash": "9a33c75c81cad4e891dd7537992a734681083cd43d40061e34c73e6b6a9ba0d6"
+            }
+          },
+          {
+            "id": "034_add_column_ingredientes_stock_actual",
+            "run": {
+              "name": "034_add_column_ingredientes_stock_actual.sql",
+              "kind": "sql",
+              "contentHash": "381e74a2727ed8927d99cd6c8f1a58e882ae4cea8d6ae48c8f218388b9680200"
+            }
+          },
+          {
+            "id": "035_add_column_pedido_platos_pedido",
+            "run": {
+              "name": "035_add_column_pedido_platos_pedido.sql",
+              "kind": "sql",
+              "contentHash": "4acac5cd47566ee70659cd6cbbc9033d9fb5d26fbaf4746c0c05e1d0a0d7fa7c"
+            }
+          },
+          {
+            "id": "036_add_column_platos_nombre",
+            "run": {
+              "name": "036_add_column_platos_nombre.sql",
+              "kind": "sql",
+              "contentHash": "aca61414128101590df75d9698e39a8a26e885f7b7c84006facb842f245c690d"
+            }
+          },
+          {
+            "id": "037_add_column_pedidos_id",
+            "run": {
+              "name": "037_add_column_pedidos_id.sql",
+              "kind": "sql",
+              "contentHash": "27c98719ff5d83ef54a6a5ca9a29e7c989b56eafbc2ddb24e16d55fcf452d2c8"
+            }
+          },
+          {
+            "id": "038_add_column_servicios_min_personas",
+            "run": {
+              "name": "038_add_column_servicios_min_personas.sql",
+              "kind": "sql",
+              "contentHash": "bd28e1122cb209bc07866c576ef7ecef9ec538bd7c62a4dada2798be1c5cefc0"
+            }
+          },
+          {
+            "id": "039_add_column_pedidos_cliente_nombre",
+            "run": {
+              "name": "039_add_column_pedidos_cliente_nombre.sql",
+              "kind": "sql",
+              "contentHash": "52186a0cae435c309c21457c5170e3242d559a70981502bf2a0ccbf2212150be"
+            }
+          },
+          {
+            "id": "040_add_column_platos_descripcion",
+            "run": {
+              "name": "040_add_column_platos_descripcion.sql",
+              "kind": "sql",
+              "contentHash": "a844485efd9fd9afc01aaadd11e6ce35f3b5028172065bc13ed881fdcf409d34"
+            }
+          },
+          {
+            "id": "041_add_column_servicio_platos_cod_servicio",
+            "run": {
+              "name": "041_add_column_servicio_platos_cod_servicio.sql",
+              "kind": "sql",
+              "contentHash": "60d9f3a28eea7aefa3d5a904e08493b80da09a60335df8b495b87af706507818"
+            }
+          },
+          {
+            "id": "042_add_column_recetas_cod_plato",
+            "run": {
+              "name": "042_add_column_recetas_cod_plato.sql",
+              "kind": "sql",
+              "contentHash": "85cfd57de2cd00114c14a1a1a127b6cd4d994e654b05994f9ad8c0ba758c7687"
+            }
+          },
+          {
+            "id": "043_add_column_pedidos_creado",
+            "run": {
+              "name": "043_add_column_pedidos_creado.sql",
+              "kind": "sql",
+              "contentHash": "0219eb013c9ff73b35728a491725be3aef479a1b16a39bbde8f01276329b246f"
+            }
+          },
+          {
+            "id": "044_add_column_platos_activo",
+            "run": {
+              "name": "044_add_column_platos_activo.sql",
+              "kind": "sql",
+              "contentHash": "dc141ad20f8908b58c112b70788dcd893227127ffef959bbbd29e05b8cb1a2e7"
+            }
+          },
+          {
+            "id": "045_add_column_pedido_platos_cod_plato",
+            "run": {
+              "name": "045_add_column_pedido_platos_cod_plato.sql",
+              "kind": "sql",
+              "contentHash": "b695103b1e2c802840534a6a6c3222db581cac041d43aedc34bfeb1ec50cad49"
+            }
+          },
+          {
+            "id": "046_add_column_platos_porciones_receta",
+            "run": {
+              "name": "046_add_column_platos_porciones_receta.sql",
+              "kind": "sql",
+              "contentHash": "a59cd8770ea2c893efe7eb3e61469d19013c4ed9ef88d073e88f4cc099b9715f"
+            }
+          },
+          {
+            "id": "047_remove_table_pabellones",
+            "run": {
+              "name": "047_remove_table_pabellones.sql",
+              "kind": "sql",
+              "contentHash": "6150ecf821b52ae2e2791f44d7b517ff0dbf683f00fde6cc5bc154850cddf715"
+            }
+          },
+          {
+            "id": "048_remove_table_departamentos",
+            "run": {
+              "name": "048_remove_table_departamentos.sql",
+              "kind": "sql",
+              "contentHash": "0957191d6c7478c1f7622701b627160b3fb300850a1288221297b7b96b07443d"
+            }
+          },
+          {
+            "id": "049_remove_table_estudiantes",
+            "run": {
+              "name": "049_remove_table_estudiantes.sql",
+              "kind": "sql",
+              "contentHash": "c09359d1c3f6e6fbb32c6a5222d107eb0f1eec84e56cb0b247e863f5dad2d916"
+            }
+          },
+          {
+            "id": "050_remove_table_materias",
+            "run": {
+              "name": "050_remove_table_materias.sql",
+              "kind": "sql",
+              "contentHash": "581f45f5a3e01522889223919aa37df45b6268adcb0efcc23b351128913f6fd0"
+            }
+          },
+          {
+            "id": "051_remove_table_planes",
+            "run": {
+              "name": "051_remove_table_planes.sql",
+              "kind": "sql",
+              "contentHash": "dd823b6aaefb0329b53264e70398333c1de0457a4f11da67f11606969b7757fc"
+            }
+          },
+          {
+            "id": "052_remove_table_enrolamientos",
+            "run": {
+              "name": "052_remove_table_enrolamientos.sql",
+              "kind": "sql",
+              "contentHash": "92cedb22ad037c0ba1042455ef214d83269b8fc622c34ad19e863ccf150835ff"
+            }
+          },
+          {
+            "id": "053_add_constraint_servicio_platos_servicio_platos_pkey",
+            "run": {
+              "name": "053_add_constraint_servicio_platos_servicio_platos_pkey.sql",
+              "kind": "sql",
+              "contentHash": "6bdd881ffc439bd1d7cb8224b8257345c2267863f5626458f1b8c21d409d9ec3"
+            }
+          },
+          {
+            "id": "054_add_constraint_ingredientes_ingredientes_pkey",
+            "run": {
+              "name": "054_add_constraint_ingredientes_ingredientes_pkey.sql",
+              "kind": "sql",
+              "contentHash": "597a24139bb81061676c472c1dc91a3f8aa3da992df975e83967761f8b14fad7"
+            }
+          },
+          {
+            "id": "055_add_constraint_pedido_platos_pedido_platos_pkey",
+            "run": {
+              "name": "055_add_constraint_pedido_platos_pedido_platos_pkey.sql",
+              "kind": "sql",
+              "contentHash": "6b4a287c92cf777577f9ddfbca9385e47744cb980c64ee7fef2fead74cac2ce0"
+            }
+          },
+          {
+            "id": "056_add_constraint_servicios_servicios_pkey",
+            "run": {
+              "name": "056_add_constraint_servicios_servicios_pkey.sql",
+              "kind": "sql",
+              "contentHash": "530d621812f10158907ea73f3e451751f85a684077d718b8a222cd0eb7b3ef21"
+            }
+          },
+          {
+            "id": "057_add_constraint_recetas_recetas_pkey",
+            "run": {
+              "name": "057_add_constraint_recetas_recetas_pkey.sql",
+              "kind": "sql",
+              "contentHash": "207805c68b5959068c0ebd53eea36a52ffcf3effde52622c79a736bcc0b3400a"
+            }
+          },
+          {
+            "id": "058_add_constraint_platos_platos_pkey",
+            "run": {
+              "name": "058_add_constraint_platos_platos_pkey.sql",
+              "kind": "sql",
+              "contentHash": "6d2554351be1a2e172e70920e037554492780c6bf21c1e87b7475fc9e02b724d"
+            }
+          },
+          {
+            "id": "059_add_constraint_pedidos_pedidos_pkey",
+            "run": {
+              "name": "059_add_constraint_pedidos_pedidos_pkey.sql",
+              "kind": "sql",
+              "contentHash": "32deb38ee103532f4a136694adad8bbb36581a8115c1a1a5d7f85ac2b1142342"
+            }
+          },
+          {
+            "id": "060_add_constraint_recetas_recetas_plato_fkey",
+            "run": {
+              "name": "060_add_constraint_recetas_recetas_plato_fkey.sql",
+              "kind": "sql",
+              "contentHash": "fd9d0d1064ec642fc306366a2845ccef9aefbf7e1b643705d0eba0b9ae233d46"
+            }
+          },
+          {
+            "id": "061_add_constraint_servicio_platos_servicio_platos_plato_fkey",
+            "run": {
+              "name": "061_add_constraint_servicio_platos_servicio_platos_plato_fkey.sql",
+              "kind": "sql",
+              "contentHash": "bf4b703804719a842a0912155e1ad129cc5cca0ce123cc4500a78918e5ed0d90"
+            }
+          },
+          {
+            "id": "062_add_constraint_pedido_platos_pedido_platos_pedido_fkey",
+            "run": {
+              "name": "062_add_constraint_pedido_platos_pedido_platos_pedido_fkey.sql",
+              "kind": "sql",
+              "contentHash": "6ecc72c4c0ee7a05c3605520326eabfb16c6e30bf7f62ba3ea486da65314cff2"
+            }
+          },
+          {
+            "id": "063_add_constraint_recetas_recetas_ingrediente_fkey",
+            "run": {
+              "name": "063_add_constraint_recetas_recetas_ingrediente_fkey.sql",
+              "kind": "sql",
+              "contentHash": "5166a7d0f92827a9c6c049358363bdc027515ab4e257aba80de86469a62cba2b"
+            }
+          },
+          {
+            "id": "064_add_constraint_pedidos_pedidos_servicio_fkey",
+            "run": {
+              "name": "064_add_constraint_pedidos_pedidos_servicio_fkey.sql",
+              "kind": "sql",
+              "contentHash": "c7df95ecad6c4642e988fa950540517ea6bb7ae817cd1b0646107523fa4229fe"
+            }
+          },
+          {
+            "id": "065_add_constraint_pedido_platos_pedido_platos_plato_fkey",
+            "run": {
+              "name": "065_add_constraint_pedido_platos_pedido_platos_plato_fkey.sql",
+              "kind": "sql",
+              "contentHash": "54adafbd6ed34543cfe9b0e999633f0975dd80ade5c3313e2593151ec7c52aca"
+            }
+          },
+          {
+            "id": "066_add_constraint_servicio_platos_servicio_platos_servicio_fkey",
+            "run": {
+              "name": "066_add_constraint_servicio_platos_servicio_platos_servicio_fkey.sql",
+              "kind": "sql",
+              "contentHash": "6d658723bda38e4ea1e77299ea5fb861d90fe4e770f32095280faa2f8af866af"
+            }
+          },
+          {
+            "id": "app-permissions",
+            "run": {
+              "name": "app-permissions.sql",
+              "kind": "sql",
+              "contentHash": "256b7362b2a801a5fbc713f76d083686041d16cff3b55bcb00542f40c20c98c3"
+            }
+          }
+        ],
+        "after": []
+      },
+      "migrationHash": "6f87a779bfb53eff0759ad3e0231cc4da40eb825c0a2162aefa60a2b1ee2df9c"
     }
   ]
 }

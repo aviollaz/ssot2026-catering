@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Catering · Hacé tu pedido</title>
+    <link rel="stylesheet" href="/pedido.css">
+    <script type="module" src="/assets/pedido.js"></script>
+</head>
+<body>
+    <header class="hero">
+        <p class="brand">Catering</p>
+        <h1>Tu evento, servido con cuidado</h1>
+        <p class="lead">Elegí un menú armado o tus platos favoritos, contanos cuándo y para cuántos, y nosotros nos ocupamos del resto.</p>
+    </header>
+
+    <main>
+        <ol class="steps" aria-label="Pasos del pedido">
+            <li data-step="menu">Menú</li>
+            <li data-step="evento">Evento</li>
+            <li data-step="contacto">Contacto</li>
+            <li data-step="resumen">Confirmar</li>
+        </ol>
+        <p id="error" class="error" role="alert"></p>
+
+        <section id="paso-menu" class="step" aria-labelledby="titulo-menu">
+            <h2 id="titulo-menu">¿Qué te gustaría servir?</h2>
+            <div class="mode-switch" role="group" aria-label="Tipo de pedido">
+                <button type="button" data-modo="servicio" aria-pressed="true">Menús armados</button>
+                <button type="button" data-modo="carta" aria-pressed="false">A la carta</button>
+            </div>
+            <div id="servicios" class="cards"></div>
+            <div id="carta" hidden></div>
+            <div class="nav"><span></span><button type="button" id="menu-siguiente" class="primary">Siguiente</button></div>
+        </section>
+
+        <form id="paso-evento" class="step" aria-labelledby="titulo-evento" hidden>
+            <h2 id="titulo-evento">Tu evento</h2>
+            <div class="grid">
+                <label>Cantidad de personas<input id="personas" name="personas" type="number" step="1" min="1" required></label>
+                <label>Fecha y hora<input id="fecha" name="fecha_evento" type="datetime-local" step="60" required></label>
+            </div>
+            <p id="evento-ayuda" class="hint"></p>
+            <div class="nav"><button type="button" data-back>Volver</button><button type="submit" class="primary">Siguiente</button></div>
+        </form>
+
+        <form id="paso-contacto" class="step" aria-labelledby="titulo-contacto" hidden>
+            <h2 id="titulo-contacto">Tus datos</h2>
+            <div class="grid">
+                <label>Nombre y apellido<input name="cliente_nombre" autocomplete="name" maxlength="100" required></label>
+                <label>Email<input name="cliente_email" type="email" autocomplete="email" maxlength="100" required></label>
+                <label>Teléfono<input name="cliente_telefono" type="tel" autocomplete="tel" maxlength="40" required></label>
+                <label>Dirección del evento<input name="direccion" autocomplete="street-address" maxlength="150" required></label>
+            </div>
+            <label>Observaciones (opcional)<textarea name="observaciones" rows="3" maxlength="500" placeholder="Alergias, horarios de armado, accesos…"></textarea></label>
+            <div class="nav"><button type="button" data-back>Volver</button><button type="submit" class="primary">Siguiente</button></div>
+        </form>
+
+        <section id="paso-resumen" class="step" aria-labelledby="titulo-resumen" hidden>
+            <h2 id="titulo-resumen">Revisá tu pedido</h2>
+            <div id="resumen" class="summary"></div>
+            <p class="hint">El total es estimado; lo confirmamos al aceptar el pedido.</p>
+            <div class="nav"><button type="button" data-back>Volver</button><button type="button" id="confirmar" class="primary">Confirmar pedido</button></div>
+        </section>
+
+        <section id="paso-listo" class="step done" aria-labelledby="titulo-listo" hidden>
+            <h2 id="titulo-listo">¡Recibimos tu pedido!</h2>
+            <p>Guardá este código para consultar el estado cuando quieras:</p>
+            <p><code id="codigo"></code></p>
+            <p><a id="link-consulta" href="/pedido">Ver el estado de mi pedido</a></p>
+        </section>
+
+        <section id="paso-consulta" class="step" aria-labelledby="titulo-consulta" hidden>
+            <h2 id="titulo-consulta">Estado de tu pedido</h2>
+            <div id="consulta-resultado" class="summary"></div>
+            <p><a href="/pedido">Hacer otro pedido</a></p>
+        </section>
+    </main>
+
+    <footer>
+        <form id="buscar" action="/pedido">
+            <label>¿Ya hiciste un pedido? <input name="codigo" placeholder="Código de pedido" required spellcheck="false" autocomplete="off"></label>
+            <button type="submit">Consultar</button>
+        </form>
+    </footer>
+</body>
+</html>

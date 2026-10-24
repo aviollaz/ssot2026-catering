@@ -24,7 +24,7 @@ async function request(path: string, method = 'GET', body?: unknown, signal?: Ab
         ...(body === undefined ? {} : {body: JSON.stringify(body)}),
     });
     if (!response.ok) {
-        if (response.status === 401 && (path.startsWith('/api/entities') || path === '/api/events' || path === '/api/auth/me')) {
+        if (response.status === 401 && (path.startsWith('/api/entities') || path.startsWith('/api/catering') || path === '/api/events' || path === '/api/auth/me')) {
             clearSession();
             window.dispatchEvent(new Event('sessionexpired'));
         }
@@ -32,6 +32,11 @@ async function request(path: string, method = 'GET', body?: unknown, signal?: Ab
         throw new ApiRequestError(error.error, error.problems ?? []);
     }
     return response;
+}
+
+// Authenticated catering endpoints (purchases, deliveries, statistics).
+export async function cateringRequest<T>(path: string, method = 'GET'): Promise<T> {
+    return (await request(`/api/catering${path}`, method, method === 'GET' ? undefined : {})).json() as Promise<T>;
 }
 
 const path = (name: EntityName) => `/api/entities/${encodeURIComponent(name)}`;

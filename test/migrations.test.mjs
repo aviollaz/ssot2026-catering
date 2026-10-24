@@ -27,7 +27,7 @@ test('authored migration checks load exact bytes and reject changed, missing or 
     }
 });
 
-test('the current SSOT migration state survives canonical JSON serialization, including composite FKs', async () => {
+test('the current SSOT migration state survives canonical JSON serialization, including renamed FK fields', async () => {
     const system = value(decodeSqlSsot(ssot, sqlMapping));
     const state = value(await captureMigrationState(system, 'ssot', 'roundtrip'));
     assert.deepEqual(value(await readStateBytes(jsonBytes(state))), state);
@@ -42,6 +42,8 @@ test('migration artifacts retain valid hashes and grant CRUD only when their tab
         '0003_authenticated_administrators': [],
         '0004_materias_plan_fk': [],
         '0005_update_schema': ['departamentos', 'enrolamientos', 'estudiantes'],
+        '0006_update_schema': [],
+        '0007_update_schema': ['ingredientes', 'pedido_platos', 'pedidos', 'platos', 'recetas', 'servicio_platos', 'servicios'],
     };
     for (let index = 0; index < catalog.releases.length; index++) value(await readCatalogState(root, catalog, index));
     for (const published of catalog.migrations) {
@@ -78,4 +80,24 @@ test('the schema update keeps four decision bindings and executes their shared g
     }
     const sql = await readFile(join(directory, manifest.script.path), 'utf8');
     assert.equal([...sql.matchAll(/SELECT NOT EXISTS \(SELECT 1 FROM "ssot"\."materias"\) AS ok;/g)].length, 1);
+});
+
+test('the catering model replaces the academic tables in two steps: their FKs first, then the tables', async () => {
+    const catalog = value(await readStoredCatalog('migrations'));
+    const script = async id => {
+        const published = catalog.migrations.find(entry => entry.migration.id === id);
+        const directory = migrationDirectory('migrations', published);
+        const {authoring, manifest} = value(await verifyMigrationFiles(directory, published));
+        return {authoring, sql: await readFile(join(directory, manifest.script.path), 'utf8')};
+    };
+    // PostgreSQL rejects dropping a table that another table still references.
+    const fks = await script('0006_update_schema');
+    assert.equal([...fks.sql.matchAll(/DROP CONSTRAINT "[^"]+_fkey"/g)].length, 5);
+    assert.doesNotMatch(fks.sql, /DROP TABLE|CREATE TABLE|\b(?:INSERT|UPDATE|DELETE|TRUNCATE|CASCADE)\b/);
+    const swap = await script('0007_update_schema');
+    const dropped = [...swap.sql.matchAll(/DROP TABLE "ssot"\."([^"]+)";/g)].map(match => match[1]).sort();
+    assert.deepEqual(dropped, ['departamentos', 'enrolamientos', 'estudiantes', 'materias', 'pabellones', 'planes']);
+    assert.ok(swap.authoring.decisions.length > 0);
+    assert.ok(swap.authoring.decisions.every(decision => decision.resolution.kind === 'discard'));
+    assert.match(swap.sql, /FOREIGN KEY \("pedido"\) REFERENCES "ssot"\."pedidos" \("id"\)/);
 });

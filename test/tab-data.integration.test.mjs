@@ -8,25 +8,28 @@ import {loadTabData} from '../dist/backend/tab-data.js';
 
 test('tab-plus imports use SSOT types, FK order and atomic app-user writes', async () => {
     await withTestDatabase(async ({pool}) => {
-        assert.equal(await loadTabData(pool, 'examples/data'), 12);
-        assert.deepEqual((await pool.query("SELECT nota, regularidad FROM ssot.enrolamientos WHERE legajo='E002'")).rows, [{nota: null, regularidad: null}]);
-        assert.deepEqual((await pool.query("SELECT plan, obligatoria FROM ssot.materias WHERE cod_mat='LOG'")).rows, [{plan: 1993, obligatoria: false}]);
-        const before = (await pool.query('SELECT * FROM ssot.planes ORDER BY plan')).rows;
+        assert.equal(await loadTabData(pool, 'examples/data'), 52);
+        assert.deepEqual((await pool.query("SELECT activo, descripcion IS NOT NULL AS descrito FROM ssot.platos WHERE cod_plato='RAV'")).rows, [{activo: false, descrito: true}]);
+        assert.deepEqual((await pool.query("SELECT unidad, stock_actual FROM ssot.ingredientes WHERE cod_ing='HUE'")).rows, [{unidad: 'u', stock_actual: 30}]);
+        const before = (await pool.query('SELECT * FROM ssot.servicios ORDER BY cod_servicio')).rows;
         await assert.rejects(loadTabData(pool, 'examples/data'), {code: '23505'});
-        assert.deepEqual((await pool.query('SELECT * FROM ssot.planes ORDER BY plan')).rows, before);
+        assert.deepEqual((await pool.query('SELECT * FROM ssot.servicios ORDER BY cod_servicio')).rows, before);
         const directory = await mkdtemp(join(tmpdir(), 'ssot-tab-'));
         try {
             // The first insert succeeds, but a later FK violation must roll it back.
-            await writeFile(join(directory, 'planes.tab'), 'plan|descripcion\n2050|New plan\n');
-            await writeFile(join(directory, 'materias.tab'), 'cod_mat|cod_dep|materia|plan|obligatoria\nNEW|MISSING|New|2050|true\n');
+            await writeFile(join(directory, 'servicios.tab'), 'cod_servicio|nombre|descripcion|precio_persona|min_personas|activo\nNEW|Nuevo|\\N|100|1|true\n');
+            await writeFile(join(directory, 'servicio_platos.tab'), 'cod_servicio|cod_plato|porciones_por_persona\nNEW|MISSING|1\n');
             await assert.rejects(loadTabData(pool, directory), {code: '23503'});
-            assert.deepEqual((await pool.query('SELECT * FROM ssot.planes ORDER BY plan')).rows, before);
-            await writeFile(join(directory, 'materias.tab'), 'cod_mat|cod_dep|materia|plan|obligatoria\nNEW|DC|New|1993|true\n');
-            await assert.rejects(loadTabData(pool, directory), /1993/);
-            assert.deepEqual((await pool.query('SELECT * FROM ssot.planes ORDER BY plan')).rows, before);
-            await writeFile(join(directory, 'planes.tab'), 'plan|descripcion\nnot-a-number|Bad\n');
+            assert.deepEqual((await pool.query('SELECT * FROM ssot.servicios ORDER BY cod_servicio')).rows, before);
+            await writeFile(join(directory, 'servicio_platos.tab'), 'cod_servicio|cod_plato|porciones_por_persona\nNEW|EMP|1\n');
+            await writeFile(join(directory, 'pedidos.tab'), 'cliente_nombre|cliente_email|cliente_telefono|direccion|fecha_evento|personas|estado|cod_servicio|total|observaciones\n' +
+                'Ana|sin-arroba|1|Calle 1|2026-11-12T20:00|10|Pendiente|NEW|1000|\\N\n');
+            await assert.rejects(loadTabData(pool, directory), /email/);
+            assert.deepEqual((await pool.query('SELECT * FROM ssot.servicios ORDER BY cod_servicio')).rows, before);
+            await rm(join(directory, 'pedidos.tab'));
+            await writeFile(join(directory, 'servicios.tab'), 'cod_servicio|nombre|descripcion|precio_persona|min_personas|activo\nNEW|Nuevo|\\N|0|1|true\n');
             await assert.rejects(loadTabData(pool, directory), /valor inválido/);
-            await writeFile(join(directory, 'planes.tab'), 'plan|secret\n1|Bad\n');
+            await writeFile(join(directory, 'servicios.tab'), 'cod_servicio|secret\nNEW|Bad\n');
             await assert.rejects(loadTabData(pool, directory), /columnas/);
         } finally {
             // Exact temporary directory created by this test; no repository or DB data removed.

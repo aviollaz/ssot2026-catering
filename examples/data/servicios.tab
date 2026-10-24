@@ -1,0 +1,3 @@
+cod_servicio|nombre|descripcion|precio_persona|min_personas|activo
+COCTEL|Cóctel de bienvenida|Recepción de pie con bocados y bebida.|4500|20|true
+CENA|Cena formal|Entrada, principal, postre y bebida servidos a la mesa.|14000|30|true

@@ -23,11 +23,11 @@ test('history keeps pending migrations and updates SQL, history and pointer in o
         const migration = {id, from, to, description: id, before: [], after: [], steps: [{id: 'sql', run: {kind: 'sql', name: id + '.sql', contentHash: sha256Hex(new TextEncoder().encode(text))}}]};
         return {migration, migrationHash: computeMigrationHash({formatVersion: 1, migration})};
     };
-    const AB = published('initial', A, B, sql), BC = published('next', B, C, 'ALTER TABLE ssot.materias ADD COLUMN notes text;');
+    const AB = published('initial', A, B, sql), BC = published('next', B, C, 'ALTER TABLE ssot.platos ADD COLUMN notes text;');
     const catalog = value(completeMigrationCatalog([A, B, C], [AB, BC]));
     const next = structuredClone(ssot);
-    next.entities.materias.fields.notes = myRecords.completeField({type: 'text'}, 'notes');
-    next.records.materia.notes = next.entities.materias.fields.notes;
+    next.entities.platos.fields.notes = myRecords.completeField({type: 'text'}, 'notes');
+    next.records.plato.notes = next.entities.platos.fields.notes;
     const schemas = {[A.releaseHash]: empty, [B.releaseHash]: desired, [C.releaseHash]: value(projectSsotSchema(value(decodeSqlSsot(next, sqlMapping)), schema))};
     const state = () => readMigrationHistory(handle.session, journal, scope, catalog, schemas).then(value);
     const entry = {installationId: handle.id, ordinal: 1, migrationId: AB.migration.id, migrationHash: AB.migrationHash, from: A, to: B, committedAt: '2026-10-11T00:00:00.000Z'};
@@ -49,7 +49,7 @@ test('history keeps pending migrations and updates SQL, history and pointer in o
         await handle.session.query('COMMIT', []);
         assert.deepEqual((await state()).migrations.map(migration => migration.applied), [true, false]);
         assert.equal((await readMigrationHistory(handle.session, journal, scope, {...catalog, migrations: [{...AB, migrationHash: '8'.repeat(64)}, BC]}, schemas)).ok, false);
-        await handle.session.query('ALTER TABLE ssot.materias ADD COLUMN unexpected text', []);
+        await handle.session.query('ALTER TABLE ssot.platos ADD COLUMN unexpected text', []);
         const drift = await readMigrationHistory(handle.session, journal, scope, catalog, schemas);
         assert.equal(drift.ok, false);
         assert.equal(drift.problems[0].messageKey, 'migration.schemaDrift');

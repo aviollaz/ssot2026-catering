@@ -4,14 +4,14 @@ import {createReferenceFields, referenceOptions} from '../dist/frontend/foreign-
 import {loadReferenceSources} from '../dist/frontend/reference-sources.js';
 
 test('FK options display keys and names while preserving the original value types', () => {
-    const reference = {entity: 'planes', fields: {plan: 'plan'}, displayFields: ['plan', 'descripcion']};
+    const reference = {entity: 'servicios', fields: {cod_servicio: 'cod_servicio'}, displayFields: ['cod_servicio', 'nombre']};
     assert.deepEqual(referenceOptions(reference, [
-        {plan: 0, descripcion: 'Inicial'}, {plan: 2026, descripcion: '<script>text</script>'},
-        {plan: 1993, descripcion: null}, {plan: null, descripcion: 'No key'},
+        {cod_servicio: 'A', nombre: 'Inicial'}, {cod_servicio: 'CENA', nombre: '<script>text</script>'},
+        {cod_servicio: 'COCTEL', nombre: null}, {cod_servicio: null, nombre: 'No key'},
     ]), [
-        {label: '0 — Inicial', values: {plan: 0}},
-        {label: '2026 — <script>text</script>', values: {plan: 2026}},
-        {label: '1993', values: {plan: 1993}},
+        {label: 'A — Inicial', values: {cod_servicio: 'A'}},
+        {label: 'CENA — <script>text</script>', values: {cod_servicio: 'CENA'}},
+        {label: 'COCTEL', values: {cod_servicio: 'COCTEL'}},
     ]);
 });
 

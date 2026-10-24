@@ -58,7 +58,7 @@ export function createAuthentication(pool: Pick<Pool, 'query'>, secret = process
 export type Authentication = ReturnType<typeof createAuthentication>;
 
 // Per-process limit; Express uses the socket IP unless a trusted proxy is explicitly configured.
-function authenticationLimit(): RequestHandler {
+export function authenticationLimit(): RequestHandler {
     const attempts = new Map<string, {count: number; until: number}>();
     return (req, res, next) => {
         const now = Date.now();
