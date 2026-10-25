@@ -1,0 +1,70 @@
+# Avisa con un issue cuando cambian los repos de la clase de los que depende el TP:
+# - ari-dc-uba-ar/ssot2026 (main): commits que todavía no mergeamos.
+# - ari-dc-uba-ar/system-definition (refactor/migrations-full): commits posteriores
+#   al que probamos, anotado en .system-definition-rev.
+name: Novedades de la clase
+
+on:
+  schedule:
+    - cron: "17 11 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Comparar con los repos de la clase
+        id: compare
+        run: |
+          git remote add upstream https://github.com/ari-dc-uba-ar/ssot2026
+          git fetch --quiet upstream main
+          ssot=$(git log --oneline --no-merges HEAD..upstream/main)
+
+          git clone --quiet --filter=blob:none --branch refactor/migrations-full \
+            https://github.com/ari-dc-uba-ar/system-definition ../system-definition
+          probado=$(cat .system-definition-rev)
+          sysdef=$(git -C ../system-definition log --oneline "$probado"..HEAD)
+
+          {
+            echo "Revisá esto y, si corresponde, actualizá el TP."
+            echo
+            echo "## ssot2026 (\`upstream/main\`)"
+            if [ -n "$ssot" ]; then
+              echo "Commits sin mergear (\`git fetch upstream && git merge upstream/main\`):"
+              echo '```'; echo "$ssot"; echo '```'
+            else
+              echo "Al día."
+            fi
+            echo
+            echo "## system-definition (\`refactor/migrations-full\`)"
+            if [ -n "$sysdef" ]; then
+              echo "Commits posteriores a \`${probado:0:7}\`, el último probado. Después de"
+              echo "probarlos, anotá el nuevo commit en \`.system-definition-rev\`:"
+              echo '```'; echo "$sysdef"; echo '```'
+            else
+              echo "Al día."
+            fi
+          } > body.md
+
+          if [ -n "$ssot$sysdef" ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Abrir o actualizar el issue
+        if: steps.compare.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          titulo="Novedades en los repos de la clase"
+          numero=$(gh issue list --state open --search "in:title \"$titulo\"" --json number --jq '.[0].number')
+          if [ -n "$numero" ]; then
+            gh issue edit "$numero" --body-file body.md
+          else
+            gh issue create --title "$titulo" --body-file body.md
+          fi
