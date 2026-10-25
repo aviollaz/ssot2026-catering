@@ -7,6 +7,7 @@ import {element} from './dom.js';
 import {actionButton, setActionLabel} from './action-button.js';
 import {createTableNavigation} from './table-navigation.js';
 import {reviewRow} from './review-row.js';
+import {pedidoPlatos} from './pedido-platos.js';
 import {initializeAuthentication} from './auth-ui.js';
 import {loadReferenceSources, type LoadedReferenceSource} from './reference-sources.js';
 import {confirmAction, showDeleteDependencies} from './confirm.js';
@@ -460,7 +461,7 @@ async function show(name: EntityName): Promise<void> {
                 cache.invalidate(name);
                 const query = {where: rowKey(entity, row)} as EntityQuery;
                 const current = entityPage(await load(name, query), query).rows[0];
-                reviewRow(entity, row, editors.get(row)!.read(), current);
+                reviewRow(entity, row, editors.get(row)!.read(), current, ...name === 'pedidos' ? [await pedidoPlatos(row)] : []);
             })));
         });
         for (const row of table.rows) {

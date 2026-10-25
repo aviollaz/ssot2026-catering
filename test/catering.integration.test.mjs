@@ -49,6 +49,20 @@ test('confirmed orders take the stock in date order and each buys only its own s
     });
 });
 
+test('recipes accept fractional quantities and purchases round them up', async () => {
+    await withTestDatabase(async ({pool}) => {
+        const {A} = await fixture(pool);
+        // Half an egg per bread: A's 6 portions need 3 eggs, and 0.25 g of salt per 10 portions rounds up to 1 g.
+        await pool.query(`INSERT INTO ssot.ingredientes (cod_ing, nombre, unidad, stock_actual) VALUES ('HUE', 'Huevo', 'u', 0)`);
+        await pool.query(`INSERT INTO ssot.recetas (cod_plato, cod_ing, cantidad) VALUES ('PAN', 'HUE', 5)`);
+        await pool.query(`UPDATE ssot.recetas SET cantidad = 0.25 WHERE cod_plato = 'PAN' AND cod_ing = 'SAL'`);
+        assert.deepEqual((await pool.query(`SELECT cantidad FROM ssot.recetas WHERE cod_ing = 'SAL' AND cod_plato = 'PAN'`)).rows, [{cantidad: 0.25}]);
+        const {HUE, SAL} = resumen(await comprasDePedido(pool, A));
+        assert.deepEqual(HUE, {stock: 0, necesidad: 3, consumo_previo: 0, faltante: 3, comprar: 3});
+        assert.deepEqual(SAL, {stock: 100, necesidad: 1, consumo_previo: 0, faltante: 0, comprar: 0});
+    });
+});
+
 test('delivering an order takes its consumption out of the stock in the same transaction', async () => {
     await withTestDatabase(async ({pool}) => {
         const {A, B, P} = await fixture(pool);

@@ -70,7 +70,7 @@ const plato = defineRecord(myTypes,{
 const receta = defineRecord(myTypes,{
     cod_plato :{ type:'text', label: 'Plato' },
     cod_ing   :{ type:'text', label: 'Ingrediente' },
-    cantidad  :{ type:'posInteger', label: 'Cantidad por receta', nullable: false },
+    cantidad  :{ type:'posDecimal', label: 'Cantidad por receta', nullable: false },
 })
 
 const servicio = defineRecord(myTypes,{
@@ -220,6 +220,7 @@ export const sqlMapping = {
     integer: sqlTypes.integer,
     posInteger: sqlTypes.integer,
     cantidad: sqlTypes.integer,
+    posDecimal: sqlTypes.numeric,
     unidad: sqlTypes.text,
     categoria: sqlTypes.text,
     estadoPedido: sqlTypes.text,

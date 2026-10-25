@@ -5,13 +5,14 @@ type Column = EntityInputColumn;
 type Value = FieldValue;
 type Editor = {input: HTMLInputElement | HTMLSelectElement; read: () => Value; requiredWhenEnabled?: boolean};
 
-function integerEditor(constraints: Column['constraints']): Editor {
+function numberEditor(constraints: Column['constraints'], step: string): Editor {
     const input = element('input');
     input.type = 'number';
-    input.step = '1';
+    input.step = step;
     if (constraints.minimum !== undefined) input.min = String(constraints.minimum);
     return {input, read: () => input.valueAsNumber, requiredWhenEnabled: true};
 }
+const integerEditor = (constraints: Column['constraints']) => numberEditor(constraints, '1');
 
 function enumEditor(constraints: Column['constraints']): Editor {
     const input = element('select');
@@ -37,6 +38,7 @@ const editors = {
     integer: integerEditor,
     posInteger: integerEditor,
     cantidad: integerEditor,
+    posDecimal: constraints => numberEditor(constraints, 'any'),
     unidad: enumEditor,
     categoria: enumEditor,
     estadoPedido: enumEditor,

@@ -40,6 +40,11 @@
       "systemId": "ssot2026",
       "releaseId": "0007_update_schema",
       "releaseHash": "5d65b2e1c9e31a607dd143a9bb2437df7f446c1729e26a38656cf3c8f84d103f"
+    },
+    {
+      "systemId": "ssot2026",
+      "releaseId": "0008_receta_cantidad_decimal",
+      "releaseHash": "b4867fad172f86ca1de2b9f186f496887940bf21c2dd4b3aed43cde4ae9ebe7b"
     }
   ],
   "migrations": [
@@ -1235,6 +1240,41 @@
         "after": []
       },
       "migrationHash": "6f87a779bfb53eff0759ad3e0231cc4da40eb825c0a2162aefa60a2b1ee2df9c"
+    },
+    {
+      "migration": {
+        "id": "0008_receta_cantidad_decimal",
+        "from": {
+          "systemId": "ssot2026",
+          "releaseId": "0007_update_schema",
+          "releaseHash": "5d65b2e1c9e31a607dd143a9bb2437df7f446c1729e26a38656cf3c8f84d103f"
+        },
+        "to": {
+          "systemId": "ssot2026",
+          "releaseId": "0008_receta_cantidad_decimal",
+          "releaseHash": "b4867fad172f86ca1de2b9f186f496887940bf21c2dd4b3aed43cde4ae9ebe7b"
+        },
+        "description": "",
+        "before": [
+          {
+            "name": "0008_recetas_cantidad_positiva.sql",
+            "kind": "check",
+            "contentHash": "87d74fd44d751983b33043446751b5e6cca999f1ea7de9293bdd6244051f1482"
+          }
+        ],
+        "steps": [
+          {
+            "id": "001_alter_column_recetas_cantidad",
+            "run": {
+              "name": "001_alter_column_recetas_cantidad.sql",
+              "kind": "sql",
+              "contentHash": "049e06fad021c8cd200831c34a7267e528f0c5c92833408541d7a5b2c4e5ab9a"
+            }
+          }
+        ],
+        "after": []
+      },
+      "migrationHash": "5c2fc1044b6b0370663b5f0481ca3b41b4bdb1f419670757dc745c8c2dd7f362"
     }
   ]
 }

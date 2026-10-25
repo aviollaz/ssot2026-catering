@@ -6,6 +6,7 @@ const typeNames: Readonly<Record<string, string>> = {
     integer: 'un número entero',
     posInteger: 'un número entero mayor que 0',
     cantidad: 'un número entero mayor o igual que 0',
+    posDecimal: 'un número mayor que 0',
     unidad: 'una opción de la lista',
     categoria: 'una opción de la lista',
     estadoPedido: 'una opción de la lista',

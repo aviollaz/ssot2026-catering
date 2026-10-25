@@ -7,8 +7,10 @@ const estadoPedidoValues = ['Pendiente', 'Confirmado', 'Entregado', 'Cancelado']
 export const appTypeDefs = {
     ...commonTypeDefs,
     posInteger: {...commonTypeDefs.integer, minimum: 1},
-    // Stock in the ingredient's base unit (g, ml, u): integers avoid numeric, which pg returns as text.
+    // Stock in the ingredient's base unit (g, ml, u).
     cantidad: {...commonTypeDefs.integer, minimum: 0},
+    // Recipe quantities may be fractional (half an egg); stored as numeric.
+    posDecimal: {tsType: boxType<number>(), minimum: 0},
     unidad: {tsType: boxType<typeof unidadValues[number]>(), values: unidadValues},
     categoria: {tsType: boxType<typeof categoriaValues[number]>(), values: categoriaValues},
     estadoPedido: {tsType: boxType<typeof estadoPedidoValues[number]>(), values: estadoPedidoValues},
@@ -33,6 +35,17 @@ const cantidadBehaviour: TypeBehaviour<number> = {
         return result.ok && cantidadBehaviour.check(result.value) ? result : notParsed('type.cantidad');
     },
     serialize: commonTypeBehaviours.integer.serialize,
+};
+
+// Greater than the minimum, so 0 is rejected; only plain decimals like 0.5, never '1e3' or ' 2 '.
+const posDecimalBehaviour: TypeBehaviour<number> = {
+    check: (value): value is number => typeof value === 'number' && Number.isFinite(value) && value > appTypeDefs.posDecimal.minimum,
+    deserialize: text => {
+        if (!/^\d+(\.\d+)?$/.test(text)) return notParsed('type.posDecimal');
+        const value = Number(text);
+        return posDecimalBehaviour.check(value) ? parsed(value) : notParsed('type.posDecimal');
+    },
+    serialize: value => String(value),
 };
 
 // The server's local time in the fechaHora format, to the minute.
@@ -68,6 +81,7 @@ export const appTypeBehaviours = {
     ...commonTypeBehaviours,
     posInteger: posIntegerBehaviour,
     cantidad: cantidadBehaviour,
+    posDecimal: posDecimalBehaviour,
     unidad: enumBehaviour(appTypeDefs.unidad.values, 'unidad'),
     categoria: enumBehaviour(appTypeDefs.categoria.values, 'categoria'),
     estadoPedido: enumBehaviour(appTypeDefs.estadoPedido.values, 'estadoPedido'),
@@ -88,6 +102,7 @@ export const inputConstraints = {
     boolean: {minLength: null, maxLength: null},
     posInteger: {minLength: null, maxLength: null, minimum: appTypeDefs.posInteger.minimum},
     cantidad: {minLength: null, maxLength: null, minimum: appTypeDefs.cantidad.minimum},
+    posDecimal: {minLength: null, maxLength: null, minimum: appTypeDefs.posDecimal.minimum},
     unidad: {minLength: null, maxLength: null, options: appTypeDefs.unidad.values},
     categoria: {minLength: null, maxLength: null, options: appTypeDefs.categoria.values},
     estadoPedido: {minLength: null, maxLength: null, options: appTypeDefs.estadoPedido.values},
