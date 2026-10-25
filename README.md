@@ -30,24 +30,34 @@ No hace falta instalar Node ni PostgreSQL: todo corre dentro de los contenedores
 
 `docker compose build` **no descarga** `system-definition`: lo copia desde la carpeta
 hermana `../system-definition` (ver `additional_contexts` en `compose.yaml`). Por eso
-hay que clonarla a mano, en la rama `refactor/migrations-full`, porque `main` no
-trae `consumers/postgres-migrations`, que el proyecto necesita.
+hay que clonarla a mano, desde la rama `refactor/migrations-full` (`main` no trae
+`consumers/postgres-migrations`, que el proyecto necesita), y dejarla en el commit
+que probamos con el TP, anotado en `.system-definition-rev`.
 
 ```sh
 mkdir tp-catering
 cd tp-catering
-git clone -b refactor/migrations-full https://github.com/ari-dc-uba-ar/system-definition
 git clone https://github.com/aviollaz/ssot2026-catering
+git clone -b refactor/migrations-full https://github.com/ari-dc-uba-ar/system-definition
+git -C system-definition checkout "$(cat ssot2026-catering/.system-definition-rev)"
 cd ssot2026-catering
+git remote add upstream https://github.com/ari-dc-uba-ar/ssot2026
 ```
+
+El `checkout` deja `system-definition` en un commit fijo (git avisa "detached HEAD";
+es lo esperado). El último comando suma el repo de la clase como `upstream`, para
+poder ver sus novedades (ver [Mantenerse al día con la clase](#mantenerse-al-día-con-la-clase)).
 
 Tiene que quedar así:
 
 ```
 tp-catering/
-├── system-definition/     ← rama refactor/migrations-full
+├── system-definition/     ← en el commit de .system-definition-rev
 └── ssot2026-catering/     ← acá se corren todos los comandos que siguen
 ```
+
+`main` tiene la versión estable del TP; el desarrollo va en ramas `feature/...`
+(por ejemplo `feature/catering`) que se integran a `main` con un PR.
 
 ### 3. Configurar (opcional)
 
@@ -97,14 +107,14 @@ Para probar el flujo completo:
 |---|---|
 | Apagar | `docker compose down` |
 | Volver a levantar | `docker compose up -d --wait` |
-| Después de un `git pull` (en los dos repos) | `docker compose build`, `docker compose run --rm migrations` y `docker compose up -d --wait` |
+| Después de un `git pull` | `git -C ../system-definition fetch` y `git -C ../system-definition checkout "$(cat .system-definition-rev)"` (por si cambió el commit probado); después `docker compose build`, `docker compose run --rm migrations` y `docker compose up -d --wait` |
 | Ver errores del backend o de las migraciones | `docker compose logs backend` / `docker compose logs migrations` |
 | Borrar la base y empezar de cero | `docker compose down -v` y repetir los pasos 4 y 5 |
 
 ### Problemas comunes
 
-- **El build falla al copiar `system-definition`**: falta la carpeta hermana, o está
-  en otra rama (paso 2).
+- **El build falla al copiar `system-definition`, o al compilar contra ella**: falta
+  la carpeta hermana, o no está en el commit de `.system-definition-rev` (paso 2).
 - **Puerto 5433 o 3001 ocupado**: cerrá lo que lo usa. Para la base también podés
   cambiar `PGPORT` en `.env`.
 - **"No existe usuario con esas credenciales"**: el usuario inicial se crea solo con
@@ -121,14 +131,18 @@ repo de la clase como `upstream` una sola vez:
 git remote add upstream https://github.com/ari-dc-uba-ar/ssot2026
 ```
 
+(Si seguiste el paso 2, ya está.)
+
 | Para… | Comando |
 |---|---|
 | Ver qué cambió en la clase | `git fetch upstream` y `git log --oneline main..upstream/main` |
 | Traer esos cambios | en una rama nueva desde `main`: `git merge upstream/main`, probar y abrir un PR |
 
 `system-definition` se usa desde la rama `refactor/migrations-full`; el último commit
-probado con el TP está en `.system-definition-rev`. Para volver a ese commit:
-`git -C ../system-definition checkout $(cat .system-definition-rev)`.
+probado con el TP está en `.system-definition-rev`. Para subirlo: `git -C
+../system-definition checkout refactor/migrations-full && git -C ../system-definition
+pull`, reconstruir y correr las pruebas, y anotar el nuevo commit
+(`git -C ../system-definition rev-parse HEAD > .system-definition-rev`) en un PR.
 
 El workflow `.github/workflows/upstream-check.yml` corre todos los días y abre (o
 actualiza) el issue "Novedades en los repos de la clase" cuando `upstream/main` tiene
