@@ -32,3 +32,5 @@ export const databaseConfig: ClientConfig = {
 
 // timestamp (OID 1114) arrives as text in the fechaHora format, matching what to_jsonb produces.
 pg.types.setTypeParser(1114, text => text.slice(0, 19).replace(' ', 'T'));
+// numeric (OID 1700) arrives as text; recipe quantities are plain decimals that fit a JS number.
+pg.types.setTypeParser(1700, Number);

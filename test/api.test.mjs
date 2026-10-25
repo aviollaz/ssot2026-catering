@@ -42,6 +42,7 @@ test('entity discovery comes from the SSOT and needs no database query', async t
 
 const text = {minLength: null, maxLength: null};
 const positive = {minLength: null, maxLength: null, minimum: 1};
+const decimal = {minLength: null, maxLength: null, minimum: 0};
 
 test('entity data preserves JSON value types and exposes only display metadata', async t => {
     let sql;
@@ -58,12 +59,12 @@ test('entity data preserves JSON value types and exposes only display metadata',
         columns: [
             {name: 'cod_plato', label: 'Plato', type: 'text', nullable: false, writable: true, constraints: text},
             {name: 'cod_ing', label: 'Ingrediente', type: 'text', nullable: false, writable: true, constraints: text},
-            {name: 'cantidad', label: 'Cantidad por receta', type: 'posInteger', nullable: false, writable: true, constraints: positive},
+            {name: 'cantidad', label: 'Cantidad por receta', type: 'posDecimal', nullable: false, writable: true, constraints: decimal},
         ],
         inputs: [
             {name: 'cod_plato', label: 'Plato', type: 'text', nullable: false, constraints: text, optionalOnUpdate: false},
             {name: 'cod_ing', label: 'Ingrediente', type: 'text', nullable: false, constraints: text, optionalOnUpdate: false},
-            {name: 'cantidad', label: 'Cantidad por receta', type: 'posInteger', nullable: false, constraints: positive, optionalOnUpdate: false},
+            {name: 'cantidad', label: 'Cantidad por receta', type: 'posDecimal', nullable: false, constraints: decimal, optionalOnUpdate: false},
         ],
         foreignKeys: [
             {name: 'plato', entity: 'platos', fields: {cod_plato: 'cod_plato'}, displayFields: ['cod_plato', 'nombre']},
@@ -119,6 +120,10 @@ test('positive integers, quantities, enums and date-times validate parsed values
     const cantidad = appTypeBehaviours.cantidad;
     for (const value of [0, 1, 5000]) assert.deepEqual(cantidad.deserialize(cantidad.serialize(value)), {ok: true, value});
     for (const value of [-1, 1.5, '0', null]) assert.equal(cantidad.check(value), false);
+    const fraction = appTypeBehaviours.posDecimal;
+    for (const value of [0.5, 2, 1.25]) assert.deepEqual(fraction.deserialize(fraction.serialize(value)), {ok: true, value});
+    for (const value of [0, -0.5, NaN, Infinity, '0.5', null]) assert.equal(fraction.check(value), false);
+    for (const text of ['0', '0.0', '-1', '.5', '1.', '1e3', ' 2', '', '9'.repeat(400)]) assert.equal(fraction.deserialize(text).ok, false);
     for (const [type, values, invalid] of [
         ['unidad', ['g', 'ml', 'u'], ['G', 'kg', '', 'g ']],
         ['categoria', ['Entrada', 'Principal', 'Postre', 'Bebida', 'Finger food'], ['entrada', 'Otra', '']],
