@@ -204,6 +204,12 @@ test('table navigation and spreadsheet work with the real API', {timeout: 90000}
                 }
                 // Catering views share the drawer: purchases for the confirmed order, its delivery, and statistics.
                 await send('Emulation.setDeviceMetricsOverride', {width: 1440, height: 900, deviceScaleFactor: 1, mobile: false});
+                // An order's details list its dishes too, and the whole dialog fits without scrolling.
+                await evaluate("document.querySelector('tbody .row-actions [aria-label=\"Ver datos actuales\"]').click()");
+                await until(() => evaluate(`const dialog=document.querySelector('dialog.review-dialog[open]');
+                    return !!dialog?.querySelector('.catering-table tbody tr') && dialog.scrollWidth <= dialog.clientWidth && dialog.scrollHeight <= dialog.clientHeight`));
+                await evaluate("[...document.querySelectorAll('dialog.review-dialog button')].find(b => b.textContent === 'Cerrar').click()");
+                await until(() => evaluate("return !document.querySelector('dialog.review-dialog')"));
                 await evaluate("document.querySelector('[data-entity=compras]').click()");
                 await until(() => evaluate("return !document.querySelector('#workspace').disabled && document.querySelector('.catering-view h2')?.textContent === 'Compras' && !!document.querySelector('.catering-table')"));
                 // 120 empanadas need 120 × 600 / 12 = 6000 g of I001, with 1 g in stock.
