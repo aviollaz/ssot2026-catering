@@ -23,8 +23,9 @@ export type EstadoPedidoResponse = Pick<Pedido, 'estado' | 'fecha_evento' | 'per
 // Admin.
 export type PedidoPendiente = Pick<Pedido, 'id' | 'cliente_nombre' | 'fecha_evento' | 'personas' | 'estado'>;
 export type CompraIngrediente = Pick<Ingrediente, 'cod_ing' | 'nombre' | 'unidad'> & {
-    // necesidad: what this order (or period) uses; consumo_previo: what earlier confirmed orders use first.
-    stock: number; necesidad: number; consumo_previo: number; comprar: number;
+    // necesidad: what this order (or period) uses; consumo_previo: what earlier confirmed orders use first;
+    // faltante: what is missing for this order and the earlier ones together; comprar: this order's share of it.
+    stock: number; necesidad: number; consumo_previo: number; faltante: number; comprar: number;
 };
 export type ComprasResponse = {ingredientes: CompraIngrediente[]};
 export type EntregaResponse = {consumo: {cod_ing: string; cantidad: number}[]};

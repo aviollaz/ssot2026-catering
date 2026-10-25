@@ -28,22 +28,22 @@ async function fixture(pool) {
         C: (await pedido('Cancelado', '2026-11-01T12:00', 50)).id,
     };
 }
-const resumen = ({ingredientes}) => Object.fromEntries(ingredientes.map(({cod_ing, stock, necesidad, consumo_previo, comprar}) =>
-    [cod_ing, {stock, necesidad, consumo_previo, comprar}]));
+const resumen = ({ingredientes}) => Object.fromEntries(ingredientes.map(({cod_ing, stock, necesidad, consumo_previo, faltante, comprar}) =>
+    [cod_ing, {stock, necesidad, consumo_previo, faltante, comprar}]));
 
 test('confirmed orders take the stock in date order and each buys only its own shortfall', async () => {
     await withTestDatabase(async ({pool}) => {
         const {A, B, P} = await fixture(pool);
         assert.deepEqual(resumen(await comprasDePedido(pool, A)), {
-            HAR: {stock: 1000, necesidad: 600, consumo_previo: 0, comprar: 0},
-            SAL: {stock: 100, necesidad: 3, consumo_previo: 0, comprar: 0},
+            HAR: {stock: 1000, necesidad: 600, consumo_previo: 0, faltante: 0, comprar: 0},
+            SAL: {stock: 100, necesidad: 3, consumo_previo: 0, faltante: 0, comprar: 0},
         });
         // B comes after A: 600 g are already taken, so 400 g are left for its 800 g.
-        assert.deepEqual(resumen(await comprasDePedido(pool, B)).HAR, {stock: 1000, necesidad: 800, consumo_previo: 600, comprar: 400});
+        assert.deepEqual(resumen(await comprasDePedido(pool, B)).HAR, {stock: 1000, necesidad: 800, consumo_previo: 600, faltante: 400, comprar: 400});
         // The earlier pending (and cancelled) orders reserve nothing; a pending order is previewed as if confirmed.
-        assert.deepEqual(resumen(await comprasDePedido(pool, P)).HAR, {stock: 1000, necesidad: 5000, consumo_previo: 0, comprar: 4000});
-        assert.deepEqual(resumen(await comprasDePeriodo(pool, '2026-11-15', '2026-11-30')).HAR, {stock: 1000, necesidad: 800, consumo_previo: 600, comprar: 400});
-        assert.deepEqual(resumen(await comprasDePeriodo(pool, '2026-11-01', '2026-11-30')).HAR, {stock: 1000, necesidad: 1400, consumo_previo: 0, comprar: 400});
+        assert.deepEqual(resumen(await comprasDePedido(pool, P)).HAR, {stock: 1000, necesidad: 5000, consumo_previo: 0, faltante: 4000, comprar: 4000});
+        assert.deepEqual(resumen(await comprasDePeriodo(pool, '2026-11-15', '2026-11-30')).HAR, {stock: 1000, necesidad: 800, consumo_previo: 600, faltante: 400, comprar: 400});
+        assert.deepEqual(resumen(await comprasDePeriodo(pool, '2026-11-01', '2026-11-30')).HAR, {stock: 1000, necesidad: 1400, consumo_previo: 0, faltante: 400, comprar: 400});
         assert.deepEqual((await comprasDePeriodo(pool, '2026-12-01', '2026-12-31')).ingredientes, []);
         await assert.rejects(comprasDePedido(pool, '00000000-0000-4000-8000-000000000000'), {status: 404});
     });
@@ -58,7 +58,7 @@ test('delivering an order takes its consumption out of the stock in the same tra
             [{cod_ing: 'HAR', stock_actual: 400}, {cod_ing: 'SAL', stock_actual: 97}]);
         assert.deepEqual((await pool.query('SELECT estado FROM ssot.pedidos WHERE id = $1', [A])).rows, [{estado: 'Entregado'}]);
         // A delivered order already left the stock, so it no longer counts as previous consumption.
-        assert.deepEqual(resumen(await comprasDePedido(pool, B)).HAR, {stock: 400, necesidad: 800, consumo_previo: 0, comprar: 400});
+        assert.deepEqual(resumen(await comprasDePedido(pool, B)).HAR, {stock: 400, necesidad: 800, consumo_previo: 0, faltante: 400, comprar: 400});
         await assert.rejects(entregarPedido(pool, A), {status: 409});
         // Stock never goes below zero, even when the missing purchase was not loaded.
         await entregarPedido(pool, B);
@@ -85,6 +85,8 @@ test('the example data reproduces the documented purchase calculation', async ()
         const [ana, bruno] = await Promise.all(rows.map(row => comprasDePedido(pool, row.id).then(resumen)));
         assert.deepEqual(rows.map(row => row.cliente_nombre), ['Ana Gómez', 'Bruno Díaz']);
         assert.deepEqual([ana.HUE.comprar, bruno.HUE.comprar], [9, 28]);
+        // Bruno's order buys only its share; together with Ana's 9 the eggs missing so far are 37.
+        assert.equal(bruno.HUE.faltante, 37);
         assert.deepEqual([ana.QUE.comprar, bruno.QUE.comprar], [0, 2500]);
     });
 });

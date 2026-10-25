@@ -7,8 +7,8 @@ import {fechaHora, seccion, tabla, type CateringView} from './catering-ui.js';
 const relevantes = [null, 'pedidos', 'pedido_platos', 'platos', 'recetas', 'ingredientes'];
 
 function tablaCompras({ingredientes}: ComprasResponse, necesidad: string, vacio: string): HTMLElement {
-    return tabla(['Ingrediente', 'Unidad', 'Stock', necesidad, 'Usan pedidos anteriores', 'A comprar'],
-        ingredientes.map(i => [i.nombre, i.unidad, i.stock, i.necesidad, i.consumo_previo, i.comprar]), vacio);
+    return tabla(['Ingrediente', 'Unidad', 'Stock', necesidad, 'Usan pedidos anteriores', 'Falta en total', 'A comprar'],
+        ingredientes.map(i => [i.nombre, i.unidad, i.stock, i.necesidad, i.consumo_previo, i.faltante, i.comprar]), vacio);
 }
 
 async function show(content: HTMLElement): Promise<(changed: string | null) => void> {
@@ -26,8 +26,9 @@ async function show(content: HTMLElement): Promise<(changed: string | null) => v
     const barra = element('div');
     barra.className = 'toolbar';
     barra.append(pedido, entregar);
-    const ayuda = element('p', 'El stock se asigna primero a los pedidos confirmados más tempranos; ' +
-        'cada pedido compra solo lo que le falta. Los pendientes se calculan como si se confirmaran.');
+    const ayuda = element('p', 'El stock se asigna primero a los pedidos confirmados más tempranos. ' +
+        '"Falta en total" es lo que falta para este pedido y los anteriores juntos; "A comprar" es la parte de este pedido ' +
+        '(el resto ya figura en las compras de los anteriores). Los pendientes se calculan como si se confirmaran.');
     ayuda.className = 'muted';
 
     // By period: every confirmed order between two dates.

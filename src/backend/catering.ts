@@ -60,6 +60,7 @@ export async function comprasDePedido(db: Pick<Pool, 'query'>, id: string): Prom
         SELECT i.cod_ing, i.nombre, i.unidad, i.stock_actual AS stock,
                CEIL(a.necesidad)::int AS necesidad,
                CEIL(a.acum - a.necesidad)::int AS consumo_previo,
+               CEIL(GREATEST(0, a.acum - i.stock_actual))::int AS faltante,
                CEIL(GREATEST(0, a.acum - i.stock_actual) - GREATEST(0, a.acum - a.necesidad - i.stock_actual))::int AS comprar
         FROM acumulado a JOIN ${T.ingredientes} i ON i.cod_ing = a.cod_ing
         WHERE a.pedido = $1
@@ -80,6 +81,7 @@ export async function comprasDePeriodo(db: Pick<Pool, 'query'>, desde: string, h
         SELECT i.cod_ing, i.nombre, i.unidad, i.stock_actual AS stock,
                CEIL(n.periodo)::int AS necesidad,
                CEIL(n.previo)::int AS consumo_previo,
+               CEIL(GREATEST(0, n.previo + n.periodo - i.stock_actual))::int AS faltante,
                CEIL(GREATEST(0, n.previo + n.periodo - i.stock_actual) - GREATEST(0, n.previo - i.stock_actual))::int AS comprar
         FROM por_ingrediente n JOIN ${T.ingredientes} i ON i.cod_ing = n.cod_ing
         WHERE n.periodo > 0

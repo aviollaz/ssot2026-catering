@@ -208,7 +208,7 @@ test('table navigation and spreadsheet work with the real API', {timeout: 90000}
                 await until(() => evaluate("return !document.querySelector('#workspace').disabled && document.querySelector('.catering-view h2')?.textContent === 'Compras' && !!document.querySelector('.catering-table')"));
                 // 120 empanadas need 120 × 600 / 12 = 6000 g of I001, with 1 g in stock.
                 assert.deepEqual(await evaluate("return [...document.querySelector('.catering-table tbody tr').cells].map(cell => cell.textContent)"),
-                    ['Ingrediente 1', 'g', '1', '6.000', '0', '5.999']);
+                    ['Ingrediente 1', 'g', '1', '6.000', '0', '5.999', '5.999']);
                 await evaluate("[...document.querySelectorAll('.catering-view button')].find(b => b.textContent === 'Marcar entregado').click()");
                 await until(() => evaluate("return document.querySelector('#confirm-dialog').open"));
                 await evaluate("document.querySelector('#confirm-ok').click()");
