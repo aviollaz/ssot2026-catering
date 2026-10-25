@@ -7,6 +7,7 @@ import {databaseSettings} from './database.js';
 import {ApiFailure, readObject} from './api-errors.js';
 import {allowedFields} from './column-security.js';
 import {hashPassword, readPassword, readUsername} from './credentials.js';
+import {localDateTime} from './value-types.js';
 
 export const entityTable = (name: string): string => `${quote(databaseSettings.database.schema)}.${quote(name)}`;
 
@@ -29,7 +30,7 @@ export async function prepareEntityWrite(entity: EntityInfo<typeof myContext>, b
     const passwordChanged = supplied.some(field => field.transform === 'password');
     for (const field of Object.values(entity.fields)) {
         const generated = operation === 'create' ? field.onCreate : field.onUpdate;
-        if (generated !== null) row[field.name] = generated === 'uuid' ? randomUUID() : '[]';
+        if (generated !== null) row[field.name] = generated === 'uuid' ? randomUUID() : generated === 'now' ? localDateTime() : '[]';
         if (passwordChanged && field.onPasswordChange === 'empty-array') row[field.name] = '[]';
     }
     return row;

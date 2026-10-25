@@ -36,8 +36,16 @@ const editors = {
     },
     integer: integerEditor,
     posInteger: integerEditor,
-    regularidad: enumEditor,
-    cuatrimestre: enumEditor,
+    cantidad: integerEditor,
+    unidad: enumEditor,
+    categoria: enumEditor,
+    estadoPedido: enumEditor,
+    fechaHora: (_constraints) => {
+        const input = element('input');
+        input.type = 'datetime-local';
+        input.step = '60';
+        return {input, read: () => input.value, requiredWhenEnabled: true};
+    },
     boolean: (_constraints) => {
         const input = element('select');
         input.add(new Option('No', 'false'));

@@ -46,84 +46,92 @@ test('server startup, authenticated CRUD and atomic bulk deletion use the app co
                 token = (await login.json()).token;
             });
             await t.test('CRUD preserves types, unrelated fields and composite keys', async () => {
-                assert.equal((await send('departamentos', 'POST', {cod_dep: 'DC', departamento: 'Computación', pabellon: null})).status, 204);
-                assert.equal((await send('planes', 'POST', {plan: 2026, descripcion: null})).status, 204);
-                const row = {cod_mat: 'ALG', cod_dep: 'DC', materia: 'Algoritmos', plan: 2026, obligatoria: false};
-                assert.equal((await send('materias', 'POST', row)).status, 204);
-                assert.equal((await send('materias', 'POST', {...row, cod_mat: 'OTRA'})).status, 204);
-                const changed = {...row, cod_mat: 'ALG2', materia: '', plan: null};
-                const key = {cod_mat: 'ALG', cod_dep: 'DC'};
-                const version = versionOf(await (await send('materias')).json(), key);
-                assert.equal((await send('materias', 'PUT', {key, row: changed, version})).status, 204);
-                const listed = await (await send('materias')).json();
-                assert.deepEqual(listed.rows.find(value => value.cod_mat === 'ALG2'), changed);
-                assert.deepEqual(listed.rows.find(value => value.cod_mat === 'OTRA'), {...row, cod_mat: 'OTRA'});
-                assert.equal((await send('materias', 'DELETE', {cod_mat: 'ALG2', cod_dep: 'DC'})).status, 204);
-                assert.equal((await send('materias', 'DELETE', {cod_mat: 'OTRA', cod_dep: 'DC'})).status, 204);
+                for (const [cod_ing, nombre] of [['HAR', 'Harina'], ['QUE', 'Queso'], ['MAN', 'Manteca']]) {
+                    assert.equal((await send('ingredientes', 'POST', {cod_ing, nombre, unidad: 'g', stock_actual: 0})).status, 204);
+                }
+                const dish = {cod_plato: 'EMP', nombre: 'Empanadas', descripcion: null, categoria: 'Finger food', porciones_receta: 12, precio_porcion: 900, activo: true};
+                assert.equal((await send('platos', 'POST', dish)).status, 204);
+                assert.deepEqual((await (await send('platos')).json()).rows, [dish]);
+                const row = {cod_plato: 'EMP', cod_ing: 'HAR', cantidad: 500};
+                assert.equal((await send('recetas', 'POST', row)).status, 204);
+                assert.equal((await send('recetas', 'POST', {...row, cod_ing: 'QUE'})).status, 204);
+                const changed = {...row, cod_ing: 'MAN', cantidad: 1};
+                const key = {cod_plato: 'EMP', cod_ing: 'HAR'};
+                const version = versionOf(await (await send('recetas')).json(), key);
+                assert.equal((await send('recetas', 'PUT', {key, row: changed, version})).status, 204);
+                const listed = await (await send('recetas')).json();
+                assert.deepEqual(listed.rows.find(value => value.cod_ing === 'MAN'), changed);
+                assert.deepEqual(listed.rows.find(value => value.cod_ing === 'QUE'), {...row, cod_ing: 'QUE'});
+                assert.equal((await send('recetas', 'DELETE', {cod_plato: 'EMP', cod_ing: 'MAN'})).status, 204);
+                assert.equal((await send('recetas', 'DELETE', {cod_plato: 'EMP', cod_ing: 'QUE'})).status, 204);
             });
             await t.test('dependency previews and failed batches preserve every selected row', async () => {
-                for (const plan of [2027, 2028]) assert.equal((await send('planes', 'POST', {plan, descripcion: null})).status, 204);
-                const row = {cod_mat: 'REF', cod_dep: 'DC', materia: null, plan: 2026, obligatoria: false};
-                assert.equal((await send('materias', 'POST', row)).status, 204);
-                const keys = [{plan: 2027}, {plan: 2026}];
-                const preview = await (await send('planes/delete-check', 'POST', {keys})).json();
-                assert.deepEqual(preview.blockers, [{entity: 'materias', relationship: 'plan', count: 1, keys: [{cod_mat: 'REF', cod_dep: 'DC'}]}]);
-                assert.equal((await send('planes/bulk-delete', 'POST', {keys})).status, 409);
-                assert.equal((await pool.query('SELECT count(*)::int AS count FROM ssot.planes')).rows[0].count, 3);
-                assert.equal((await send('planes/bulk-delete', 'POST', {keys: [{plan: 2027}, {plan: -1}]})).status, 404);
-                assert.equal((await pool.query('SELECT count(*)::int AS count FROM ssot.planes')).rows[0].count, 3);
-                assert.equal((await send('planes/bulk-delete', 'POST', {keys: [{plan: 2027}, {plan: 2028}]})).status, 204);
-                assert.deepEqual((await pool.query('SELECT plan FROM ssot.planes')).rows, [{plan: 2026}]);
+                for (const cod_ing of ['A1', 'A2']) assert.equal((await send('ingredientes', 'POST', {cod_ing, nombre: cod_ing, unidad: 'u', stock_actual: 1})).status, 204);
+                assert.equal((await send('recetas', 'POST', {cod_plato: 'EMP', cod_ing: 'HAR', cantidad: 1})).status, 204);
+                const keys = [{cod_ing: 'A1'}, {cod_ing: 'HAR'}];
+                const preview = await (await send('ingredientes/delete-check', 'POST', {keys})).json();
+                assert.deepEqual(preview.blockers, [{entity: 'recetas', relationship: 'ingrediente', count: 1, keys: [{cod_plato: 'EMP', cod_ing: 'HAR'}]}]);
+                assert.equal((await send('ingredientes/bulk-delete', 'POST', {keys})).status, 409);
+                assert.equal((await pool.query('SELECT count(*)::int AS count FROM ssot.ingredientes')).rows[0].count, 5);
+                assert.equal((await send('ingredientes/bulk-delete', 'POST', {keys: [{cod_ing: 'A1'}, {cod_ing: 'missing'}]})).status, 404);
+                assert.equal((await pool.query('SELECT count(*)::int AS count FROM ssot.ingredientes')).rows[0].count, 5);
+                assert.equal((await send('ingredientes/bulk-delete', 'POST', {keys: [{cod_ing: 'A1'}, {cod_ing: 'A2'}]})).status, 204);
+                assert.deepEqual((await pool.query('SELECT cod_ing FROM ssot.ingredientes ORDER BY cod_ing')).rows, [{cod_ing: 'HAR'}, {cod_ing: 'MAN'}, {cod_ing: 'QUE'}]);
             });
-            await t.test('composite dependency previews and deletes follow the SSOT', async () => {
-                assert.equal((await send('estudiantes', 'POST', {legajo: '1', nombre: 'Estudiante'})).status, 204);
-                const enrollment = {legajo: '1', cod_mat: 'REF', cod_dep: 'DC', año: 2026, cuatrimestre: '1C', nota: null, regularidad: null};
-                assert.equal((await send('enrolamientos', 'POST', enrollment)).status, 204);
-                const keys = [{cod_mat: 'REF', cod_dep: 'DC'}];
-                const preview = await (await send('materias/delete-check', 'POST', {keys})).json();
-                assert.equal(preview.blockers[0].entity, 'enrolamientos');
-                const {nota, regularidad, ...key} = enrollment;
-                assert.deepEqual(preview.blockers[0].keys, [key]);
-                assert.equal((await send('materias/bulk-delete', 'POST', {keys})).status, 409);
-                assert.equal((await send('enrolamientos/bulk-delete', 'POST', {keys: [key]})).status, 204);
-                assert.equal((await send('materias/bulk-delete', 'POST', {keys})).status, 204);
+            await t.test('generated keys, timestamps and renamed FK fields follow the SSOT', async () => {
+                const order = {cliente_nombre: 'Ana', cliente_email: 'ana@example.com', cliente_telefono: '1', direccion: 'Calle 1',
+                    fecha_evento: '2026-11-12T20:00', personas: 10, estado: 'Pendiente', cod_servicio: null, total: 9000, observaciones: null};
+                assert.equal((await send('pedidos', 'POST', order)).status, 204);
+                const [stored] = (await (await send('pedidos')).json()).rows;
+                assert.match(stored.id, /^[0-9a-f-]{36}$/);
+                assert.match(stored.creado, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00$/);
+                assert.equal(stored.fecha_evento, '2026-11-12T20:00:00');
+                const line = {pedido: stored.id, cod_plato: 'EMP', porciones: 10, precio_porcion: 900};
+                assert.equal((await send('pedido_platos', 'POST', line)).status, 204);
+                const keys = [{id: stored.id}];
+                const preview = await (await send('pedidos/delete-check', 'POST', {keys})).json();
+                assert.equal(preview.blockers[0].entity, 'pedido_platos');
+                assert.deepEqual(preview.blockers[0].keys, [{pedido: stored.id, cod_plato: 'EMP'}]);
+                assert.equal((await send('pedidos/bulk-delete', 'POST', {keys})).status, 409);
+                assert.equal((await send('pedido_platos/bulk-delete', 'POST', {keys: [{pedido: stored.id, cod_plato: 'EMP'}]})).status, 204);
+                assert.equal((await send('pedidos/bulk-delete', 'POST', {keys})).status, 204);
             });
             await t.test('SQL-looking input remains data across CRUD, filters, pagination, dependency checks and authentication', async () => {
-                await pool.query("INSERT INTO ssot.estudiantes (legajo, nombre) SELECT 'sentinel-' || i, 'Unchanged' FROM generate_series(1,200) i");
-                const baseline = (await pool.query('SELECT legajo, nombre FROM ssot.estudiantes ORDER BY legajo')).rows;
-                const payloads = ["' OR '1'='1", "'); DROP TABLE ssot.estudiantes; --", '"; SELECT pg_sleep(2); --',
+                await pool.query("INSERT INTO ssot.ingredientes (cod_ing, nombre, unidad, stock_actual) SELECT 'sentinel-' || i, 'Unchanged', 'g', 0 FROM generate_series(1,200) i");
+                const baseline = (await pool.query('SELECT cod_ing, nombre FROM ssot.ingredientes ORDER BY cod_ing')).rows;
+                const payloads = ["' OR '1'='1", "'); DROP TABLE ssot.ingredientes; --", '"; SELECT pg_sleep(2); --',
                     "/* comment */ UNION SELECT 'secret'", '100%_literal\\value', 'Unicode ＇；--'];
+                const query = value => `/api/entities/ingredientes?query=${encodeURIComponent(JSON.stringify(value))}`;
                 for (const [index, payload] of payloads.entries()) {
-                    const row = {legajo: payload, nombre: payload};
-                    assert.equal((await send('estudiantes', 'POST', row)).status, 204);
-                    for (const query of [{filter: payload}, {where: {legajo: payload}}]) {
-                        const response = await request(`/api/entities/estudiantes?query=${encodeURIComponent(JSON.stringify(query))}`);
+                    const row = {cod_ing: payload, nombre: payload, unidad: 'g', stock_actual: 0};
+                    assert.equal((await send('ingredientes', 'POST', row)).status, 204);
+                    for (const search of [{filter: payload}, {where: {cod_ing: payload}}]) {
+                        const response = await request(query(search));
                         assert.equal(response.status, 200);
                         const result = await response.json();
                         assert.deepEqual(result.rows, [row]);
                         assert.equal(result.window.matched, 1);
                     }
-                    const original = await (await request(`/api/entities/estudiantes?query=${encodeURIComponent(JSON.stringify({where: {legajo: payload}}))}`)).json();
-                    const changed = {legajo: `changed-${payload}`, nombre: `updated-${payload}`};
-                    assert.equal((await send('estudiantes', 'PUT', {key: {legajo: payload}, row: changed, version: original.versions[0]})).status, 204);
-                    const key = {legajo: changed.legajo};
-                    assert.deepEqual(await (await send('estudiantes/delete-check', 'POST', {keys: [key]})).json(), {blockers: []});
-                    const deleted = index % 2 ? await send('estudiantes', 'DELETE', key) : await send('estudiantes/bulk-delete', 'POST', {keys: [key]});
+                    const original = await (await request(query({where: {cod_ing: payload}}))).json();
+                    const changed = {...row, cod_ing: `changed-${payload}`, nombre: `updated-${payload}`};
+                    assert.equal((await send('ingredientes', 'PUT', {key: {cod_ing: payload}, row: changed, version: original.versions[0]})).status, 204);
+                    const key = {cod_ing: changed.cod_ing};
+                    assert.deepEqual(await (await send('ingredientes/delete-check', 'POST', {keys: [key]})).json(), {blockers: []});
+                    const deleted = index % 2 ? await send('ingredientes', 'DELETE', key) : await send('ingredientes/bulk-delete', 'POST', {keys: [key]});
                     assert.equal(deleted.status, 204);
-                    for (const query of [{sort: payload}, {direction: payload}, {page: payload}, {where: {[payload]: 'x'}}]) {
-                        assert.equal((await request(`/api/entities/estudiantes?query=${encodeURIComponent(JSON.stringify(query))}`)).status, 400);
+                    for (const search of [{sort: payload}, {direction: payload}, {page: payload}, {where: {[payload]: 'x'}}]) {
+                        assert.equal((await request(query(search))).status, 400);
                     }
                     assert.equal((await send(encodeURIComponent(payload))).status, 404);
-                    assert.equal((await send('estudiantes', 'POST', {...row, [payload]: true})).status, 400);
-                    assert.equal((await send('estudiantes', 'PUT', {key: {legajo: '1'}, row: {legajo: '1', nombre: 'bad'}, version: payload})).status, 400);
+                    assert.equal((await send('ingredientes', 'POST', {...row, [payload]: true})).status, 400);
+                    assert.equal((await send('ingredientes', 'PUT', {key: {cod_ing: '1'}, row: {...row, cod_ing: '1'}, version: payload})).status, 400);
                     const login = await request('/api/auth/login', 'POST', {usuario: 'crud-admin', contrasena: payload.padEnd(12, '-')});
                     assert.equal(login.status, 401);
                     assert.equal((await login.json()).token, undefined);
-                    assert.deepEqual((await pool.query('SELECT legajo, nombre FROM ssot.estudiantes ORDER BY legajo')).rows, baseline);
+                    assert.deepEqual((await pool.query('SELECT cod_ing, nombre FROM ssot.ingredientes ORDER BY cod_ing')).rows, baseline);
                 }
                 for (const name of ['__proto__', 'constructor', 'toString']) {
-                    const query = {where: {[name]: 'injected'}};
-                    assert.equal((await request(`/api/entities/estudiantes?query=${encodeURIComponent(JSON.stringify(query))}`)).status, 400);
+                    assert.equal((await request(query({where: {[name]: 'injected'}}))).status, 400);
                 }
                 assert.equal((await pool.query('SELECT count(*)::int AS count FROM ssot.usuarios')).rows[0].count, 1);
             });

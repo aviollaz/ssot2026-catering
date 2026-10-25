@@ -5,8 +5,11 @@ const typeNames: Readonly<Record<string, string>> = {
     text: 'texto',
     integer: 'un número entero',
     posInteger: 'un número entero mayor que 0',
-    regularidad: 'una opción de la lista',
-    cuatrimestre: 'una opción de la lista',
+    cantidad: 'un número entero mayor o igual que 0',
+    unidad: 'una opción de la lista',
+    categoria: 'una opción de la lista',
+    estadoPedido: 'una opción de la lista',
+    fechaHora: 'una fecha y hora válida',
     boolean: 'verdadero o falso',
     password: 'una contraseña válida',
 };

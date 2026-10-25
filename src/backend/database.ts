@@ -1,4 +1,4 @@
-import type { ClientConfig } from 'pg';
+import pg, { type ClientConfig } from 'pg';
 import type { DatabaseSettings } from '@system-definition/postgres-migrations/database';
 
 const url = process.env['DATABASE_URL'] ? new URL(process.env['DATABASE_URL']) : undefined;
@@ -29,3 +29,6 @@ export const databaseConfig: ClientConfig = {
     ...databaseSettings.database,
     ...databaseSettings.appUser,
 };
+
+// timestamp (OID 1114) arrives as text in the fechaHora format, matching what to_jsonb produces.
+pg.types.setTypeParser(1114, text => text.slice(0, 19).replace(' ', 'T'));

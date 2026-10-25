@@ -19,14 +19,14 @@ test('assessment reports live schema differences without changing schema or data
         assert.ok(!empty.differences.some(diff => diff.path.length === 1 && diff.path[0] === 'schemas'));
         assert.ok(empty.differences.some(diff => diff.change === 'add'));
         for (const statement of value(generateCreate(expected)).statements) await handle.session.query(statement.text, statement.values);
-        await handle.session.query("INSERT INTO ssot.materias (materia, obligatoria) VALUES ('Keep this row', false)", []);
+        await handle.session.query("INSERT INTO ssot.platos (cod_plato, nombre, descripcion, categoria, porciones_receta, precio_porcion, activo) VALUES ('EMP', 'Keep this row', null, 'Entrada', 1, 1, true)", []);
         assert.deepEqual(value(await assessSchema(system, schema, handle.session)), {equal: true, differences: []});
         const absent = value(await assessSchema(system, 'missing_schema', handle.session));
         assert.ok(absent.differences.some(diff => diff.path.length === 1 && diff.path[0] === 'schemas'));
 
         const target = structuredClone(ssot);
-        target.entities.materias.fields.notes = myRecords.completeField({type: 'text'}, 'notes');
-        target.records.materia.notes = target.entities.materias.fields.notes;
+        target.entities.platos.fields.notes = myRecords.completeField({type: 'text'}, 'notes');
+        target.records.plato.notes = target.entities.platos.fields.notes;
         const changed = value(decodeSqlSsot(target, sqlMapping));
         const missing = value(await assessSchema(changed, schema, handle.session));
         assert.equal(missing.equal, false);
@@ -34,22 +34,23 @@ test('assessment reports live schema differences without changing schema or data
         assert.equal(missing.differences.find(diff => diff.path.at(-1) === 'notes').impact, 'preserving');
         assert.equal((await handle.session.query("SELECT count(*)::int AS count FROM information_schema.columns WHERE table_schema = $1 AND column_name = 'notes'", [schema])).rows[0].count, 0);
 
-        target.entities.materias.fields.cod_mat.nullable = false;
-        target.records.materia.cod_mat.nullable = false;
+        target.entities.platos.fields.descripcion.nullable = false;
+        target.records.plato.descripcion.nullable = false;
         const required = value(await assessSchema(value(decodeSqlSsot(target, sqlMapping)), schema, handle.session));
-        assert.ok(required.differences.some(diff => diff.path.includes('cod_mat') && diff.path.at(-1) === 'nullable' && diff.impact === 'requiresDataCheck'));
-        assert.equal((await handle.session.query('SELECT cod_mat FROM ssot.materias', [])).rows[0].cod_mat, null);
+        assert.ok(required.differences.some(diff => diff.path.includes('descripcion') && diff.path.at(-1) === 'nullable' && diff.impact === 'requiresDataCheck'));
+        assert.equal((await handle.session.query('SELECT descripcion FROM ssot.platos', [])).rows[0].descripcion, null);
 
-        await handle.session.query('ALTER TABLE ssot.materias ADD COLUMN extra integer', []);
-        await handle.session.query('ALTER TABLE ssot.materias ALTER COLUMN obligatoria SET NOT NULL', []);
-        await handle.session.query('CREATE INDEX extra_index ON ssot.materias (cod_mat)', []);
+        await handle.session.query("UPDATE ssot.platos SET descripcion = ''", []);
+        await handle.session.query('ALTER TABLE ssot.platos ADD COLUMN extra integer', []);
+        await handle.session.query('ALTER TABLE ssot.platos ALTER COLUMN descripcion SET NOT NULL', []);
+        await handle.session.query('CREATE INDEX extra_index ON ssot.platos (nombre)', []);
         const drift = value(await assessSchema(system, schema, handle.session));
         assert.ok(drift.differences.some(diff => diff.change === 'remove' && diff.path.at(-1) === 'extra'));
         assert.equal(drift.differences.find(diff => diff.path.at(-1) === 'extra').impact, 'destructive');
         assert.equal(drift.differences.find(diff => diff.path.at(-1) === 'extra_index').impact, 'preserving');
         assert.ok(drift.differences.some(diff => diff.change === 'remove' && diff.path.at(-1) === 'extra_index'));
         assert.ok(drift.differences.some(diff => diff.change === 'change' && diff.path.at(-1) === 'nullable' && diff.before === false && diff.after === true));
-        assert.equal((await handle.session.query('SELECT materia FROM ssot.materias', [])).rows[0].materia, 'Keep this row');
+        assert.equal((await handle.session.query('SELECT nombre FROM ssot.platos', [])).rows[0].nombre, 'Keep this row');
         assert.equal((await handle.session.query("SELECT count(*)::int AS count FROM information_schema.columns WHERE table_schema = $1 AND column_name = 'extra'", [schema])).rows[0].count, 1);
     } finally {value(await scratch.destroy(handle));}
 });
@@ -65,28 +66,28 @@ test('generated SQL preserves a rename and stages the required-field change arou
     try {
         const current = value(projectSsotSchema(system, schema));
         for (const statement of value(generateCreate(current)).statements) await handle.session.query(statement.text, statement.values);
-        await handle.session.query("INSERT INTO ssot.materias (materia, cod_mat) VALUES ('kept', null)", []);
-        await handle.session.query("ALTER TABLE ssot.materias ALTER COLUMN cod_mat SET DEFAULT 'pending'", []);
-        current.objects.find(object => object.kind === 'column' && object.identity.name === 'cod_mat').defaultExpression = "'pending'::text";
+        await handle.session.query("INSERT INTO ssot.platos (cod_plato, nombre, descripcion, categoria, porciones_receta, precio_porcion, activo) VALUES ('EMP', 'kept', null, 'Entrada', 1, 1, true)", []);
+        await handle.session.query("ALTER TABLE ssot.platos ALTER COLUMN descripcion SET DEFAULT 'pending'", []);
+        current.objects.find(object => object.kind === 'column' && object.identity.name === 'descripcion').defaultExpression = "'pending'::text";
         const target = structuredClone(ssot);
-        delete target.entities.materias.fields.cod_mat;
-        delete target.records.materia.cod_mat;
-        target.entities.materias.fields.notes = myRecords.completeField({type: 'text', nullable: false}, 'notes');
-        target.records.materia.notes = target.entities.materias.fields.notes;
+        delete target.entities.platos.fields.descripcion;
+        delete target.records.plato.descripcion;
+        target.entities.platos.fields.notes = myRecords.completeField({type: 'text', nullable: false}, 'notes');
+        target.records.plato.notes = target.entities.platos.fields.notes;
         const changed = value(decodeSqlSsot(target, {...sqlMapping, text: sqlTypes.varchar}));
         const base = {from: {systemId: ssot.systemId, releaseId: 'before', releaseHash: '1'.repeat(64)},
             to: {systemId: ssot.systemId, releaseId: 'after', releaseHash: '2'.repeat(64)},
             fromSnapshotHash: '3'.repeat(64), toSnapshotHash: '4'.repeat(64), fromPersistenceHash: '5'.repeat(64), toPersistenceHash: '6'.repeat(64)};
         const changes = value(inferStructureChanges(base, current, value(projectSsotSchema(changed, schema)), [
-            {before: {side: 'from', entity: 'materias', field: 'cod_mat'}, after: {side: 'to', entity: 'materias', field: 'notes'}},
+            {before: {side: 'from', entity: 'platos', field: 'descripcion'}, after: {side: 'to', entity: 'platos', field: 'notes'}},
         ]));
-        const statements = value(generateMigrationSql(changes, current, changed, schema, [{side: 'to', entity: 'materias', field: 'notes'}]));
+        const statements = value(generateMigrationSql(changes, current, changed, schema, [{side: 'to', entity: 'platos', field: 'notes'}]));
         for (const statement of statements.filter(statement => statement.order < 50)) await handle.session.query(statement.text, []);
-        assert.equal((await handle.session.query('SELECT notes FROM ssot.materias', [])).rows[0].notes, null);
-        await handle.session.query("UPDATE ssot.materias SET notes = 'filled' WHERE notes IS NULL", []);
+        assert.equal((await handle.session.query('SELECT notes FROM ssot.platos', [])).rows[0].notes, null);
+        await handle.session.query("UPDATE ssot.platos SET notes = 'filled' WHERE notes IS NULL", []);
         for (const statement of statements.filter(statement => statement.order >= 50)) await handle.session.query(statement.text, []);
         assert.deepEqual(value(await assessSchema(changed, schema, handle.session)), {equal: true, differences: []});
-        assert.deepEqual((await handle.session.query('SELECT materia, notes FROM ssot.materias', [])).rows, [{materia: 'kept', notes: 'filled'}]);
+        assert.deepEqual((await handle.session.query('SELECT nombre, notes FROM ssot.platos', [])).rows, [{nombre: 'kept', notes: 'filled'}]);
     } finally {value(await scratch.destroy(handle));}
 });
 

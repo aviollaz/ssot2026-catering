@@ -1,0 +1,7 @@
+cod_plato|nombre|descripcion|categoria|porciones_receta|precio_porcion|activo
+EMP|Empanadas de jamón y queso|Masa casera horneada, una porción es una empanada.|Finger food|12|900|true
+TAR|Tarta de tomate y queso|Masa quebrada con tomates asados y queso cremoso.|Entrada|8|1500|true
+LOM|Lomo al malbec con papas|Lomo braseado en reducción de malbec, papas a la crema.|Principal|10|6500|true
+RAV|Ravioles de ricota|Pasta fresca con salsa de tomate.|Principal|6|4200|false
+MOU|Mousse de chocolate|Chocolate semiamargo y crema batida.|Postre|10|2200|true
+LIM|Limonada|Limón exprimido, menta y jengibre.|Bebida|10|800|true

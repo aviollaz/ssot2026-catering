@@ -39,7 +39,8 @@ th:hover { background: #edebe9; }
 th.row-idx, td.row-idx { width: 44px; text-align: center; background: #f3f2f1; color: #605e5c; user-select: none; font-size: .75rem; }
 th.selection-col, td.selection-col { min-width: 44px; width: 44px; text-align: center; position: sticky; left: 0; z-index: 1; background: white; }
 th.selection-col input, td.selection-col input { margin: 0; vertical-align: middle; width: 24px; height: 24px; }
-tr:hover td { background: #f9fbf9; }
+tr:nth-child(even) td { background: #f6f6f6; }
+tr:hover td { background: #eef5f0; }
 tr.new-row td { background: #f0f7f3; }
 td input, td select { width: 100%; height: 100%; border: 0; outline: none; background: transparent; padding: 2px 4px; font: inherit; color: inherit; }
 td input:focus, td select:focus { background: white; outline: 2px solid #107c41; outline-offset: -2px; }
@@ -64,6 +65,8 @@ td input[type=checkbox] { width: auto; height: auto; }
 .pagination { display: flex; align-items: center; gap: 4px; margin-left: auto; font-size: .85rem; color: #605e5c; white-space: nowrap; }
 .confirm-dialog { width: min(420px, calc(100% - 32px)); padding: 20px 24px; }
 .dependency-dialog { width: min(600px, calc(100% - 32px)); }
+.review-dialog { width: min(960px, calc(100% - 32px)); }
+.review-dialog td { overflow-wrap: anywhere; }
 .dependency-list { padding-left: 20px; }
 .dependency-list > li { margin: 10px 0; }
 .dependency-list ul { margin: 6px 0; padding-left: 20px; color: #605e5c; }

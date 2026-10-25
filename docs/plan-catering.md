@@ -94,3 +94,21 @@ Los tests en `test/` usan entidades académicas (crud, foreign-keys, ssot, data,
 - **Capacidad diaria**: un máximo de personas o pedidos por día, validado en el alta.
 - **Perecederos**: no conviene comprar con mucha anticipación. Se puede mostrar la "fecha sugerida de compra" (evento − N días).
 - **Datos personales**: los pedidos guardan datos de clientes, así que la API pública nunca debe listarlos.
+
+## Notas de implementación
+Lo que difiere del plan o lo precisa, para tenerlo en cuenta al presentar o al traer cambios de la clase:
+- **Migración en dos pasos** (`0006` y `0007`). La librería de migraciones genera los `DROP TABLE` de las tablas académicas antes de sacar sus FKs, y PostgreSQL lo rechaza. Por eso `0006` solo borra las FKs académicas, y `0007` borra las tablas (decisiones `discard`) y crea las de catering. `test/migrations.test.mjs` lo verifica.
+- **`creado`** se completa solo con `onCreate: 'now'`, un valor nuevo junto a `uuid`. Es una línea en `entity-write.ts`.
+- **`fechaHora`** acepta `YYYY-MM-DDTHH:MM` y opcionalmente `:SS`, porque PostgreSQL devuelve los segundos (tanto `to_jsonb` en la planilla como el parser de `pg` en `database.ts`).
+- **Pedidos de ejemplo** en `examples/data/pedidos.json`. Su `id` lo genera el servidor, así que no pueden ir en un `.tab` junto con `pedido_platos`. Se cargan con la misma función que usa la API pública (`crearPedido`), sin la regla de anticipación.
+- **Precio de un servicio**: se cobra `precio_persona × personas`. Los platos copiados a `pedido_platos` guardan igual su precio por porción, como registro.
+- **Validador de `pedidos`**: además de personas ≥ 1, valida que el email tenga `@`.
+- **Puntos de enganche en archivos compartidos**:
+  - `server.ts`: registro de la API y ruta `/pedido`.
+  - `main.ts`: vistas Compras y Estadísticas en el menú lateral.
+  - `api.ts`: `cateringRequest`.
+  - `auth.ts`: se exporta el rate limit.
+  - `sheet-layout.ts`: busca solo la tabla de la planilla.
+  - `index.html`: título y `catering.css`.
+- **Tests**: los de la clase se adaptaron a las entidades nuevas con la misma intención. `test/catering.integration.test.mjs` cubre el plan, y el test de UI recorre además Compras, Estadísticas y la página pública. Los dos tests de `test:assessment` que ya fallaban antes (insertaban `NULL` en una PK de `materias`) ahora pasan sobre `platos.descripcion`.
+- **Datos de ejemplo**: el pedido de Ana (Confirmado, 12/11) compra 9 huevos y 0 g de queso. El de Bruno (Confirmado, 20/11) compra 28 huevos y 2500 g de queso, porque el stock lo consume primero el pedido de Ana.

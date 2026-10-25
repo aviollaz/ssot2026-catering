@@ -1,0 +1,17 @@
+[
+    {"estado": "Confirmado", "cliente_nombre": "Ana Gómez", "cliente_email": "ana@example.com", "cliente_telefono": "11 5555-0101",
+     "direccion": "Av. Corrientes 1234, CABA", "fecha_evento": "2026-11-12T20:00", "personas": 40, "observaciones": "Casamiento civil",
+     "cod_servicio": "CENA"},
+    {"estado": "Confirmado", "cliente_nombre": "Bruno Díaz", "cliente_email": "bruno@example.com", "cliente_telefono": "11 5555-0202",
+     "direccion": "Cabildo 2500, CABA", "fecha_evento": "2026-11-20T13:00", "personas": 30, "observaciones": null,
+     "platos": [{"cod_plato": "EMP", "porciones": 120}, {"cod_plato": "MOU", "porciones": 30}]},
+    {"estado": "Pendiente", "cliente_nombre": "Carla Ruiz", "cliente_email": "carla@example.com", "cliente_telefono": "11 5555-0303",
+     "direccion": "Libertador 4000, Vicente López", "fecha_evento": "2026-11-15T19:30", "personas": 25, "observaciones": "Cumpleaños",
+     "cod_servicio": "COCTEL"},
+    {"estado": "Entregado", "cliente_nombre": "Diego Paz", "cliente_email": "diego@example.com", "cliente_telefono": "11 5555-0404",
+     "direccion": "Florida 100, CABA", "fecha_evento": "2026-10-10T21:00", "personas": 30, "observaciones": null,
+     "cod_servicio": "COCTEL"},
+    {"estado": "Cancelado", "cliente_nombre": "Elena Sosa", "cliente_email": "elena@example.com", "cliente_telefono": "11 5555-0505",
+     "direccion": "Rivadavia 7000, CABA", "fecha_evento": "2026-11-28T21:00", "personas": 35, "observaciones": null,
+     "cod_servicio": "CENA"}
+]

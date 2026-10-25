@@ -1,4 +1,116 @@
-# ssot2026
+# ssot2026 · Catering
+
+TP grupal sobre el repo de la clase: un gestor para empresas de catering (plan en
+[docs/plan-catering.md](docs/plan-catering.md)).
+
+- **Panel de la empresa** (`/`, con login): planillas generadas desde la SSOT para
+  ingredientes, platos, recetas, servicios y pedidos, más dos vistas propias en el
+  menú lateral: **Compras** (qué comprar para cada pedido o período, y "Marcar
+  entregado", que descuenta el stock) y **Estadísticas**.
+- **Página para clientes** (`/pedido`, sin cuenta): elegir un menú armado o platos a
+  la carta, fecha, personas y datos de contacto; devuelve un código para consultar
+  el estado en `/pedido?codigo=…`.
+
+La lógica de negocio está en `src/backend/catering.ts` (API `/api/catering`, con
+sesión, y `/api/public`, sin sesión), y el frontend en `src/frontend/compras.ts`,
+`estadisticas.ts` y `pedido.ts`. `npm run test:catering` prueba el cálculo de
+compras, la entrega y la API pública contra una base aislada.
+
+## Cómo ejecutarlo, paso a paso (con Docker)
+
+### 1. Instalar
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (en Linux alcanza
+  con Docker Engine y el plugin Compose). Tiene que estar abierto mientras lo usás.
+- [Git](https://git-scm.com/downloads).
+
+No hace falta instalar Node ni PostgreSQL: todo corre dentro de los contenedores.
+
+### 2. Clonar los dos repositorios, uno al lado del otro
+
+`docker compose build` **no descarga** `system-definition`: lo copia desde la carpeta
+hermana `../system-definition` (ver `additional_contexts` en `compose.yaml`). Por eso
+hay que clonarla a mano, en la rama `refactor/migrations-full`, porque `main` no
+trae `consumers/postgres-migrations`, que el proyecto necesita.
+
+```sh
+mkdir tp-catering
+cd tp-catering
+git clone -b refactor/migrations-full https://github.com/ari-dc-uba-ar/system-definition
+git clone https://github.com/aviollaz/ssot2026-catering
+cd ssot2026-catering
+```
+
+Tiene que quedar así:
+
+```
+tp-catering/
+├── system-definition/     ← rama refactor/migrations-full
+└── ssot2026-catering/     ← acá se corren todos los comandos que siguen
+```
+
+### 3. Configurar (opcional)
+
+Sin `.env` funciona con los valores por defecto de `compose.yaml`. El usuario
+administrador inicial es `jamaica123` con contraseña `josecito1234`. Para usar otros,
+copiá `.env.example` a `.env` antes del primer arranque y completá
+`AUTH_ADMIN_USERNAME`, `AUTH_ADMIN_PASSWORD` y `JWT_SECRET`.
+
+### 4. Construir, migrar y levantar
+
+```sh
+docker compose build
+docker compose run --rm migrations
+docker compose up -d --wait
+```
+
+Corré cada comando cuando termine bien el anterior. Las migraciones crean la base y
+las tablas solas.
+
+En el primer arranque, el backend imprime los códigos de recuperación del
+administrador. Se ven con `docker compose logs backend` y conviene guardarlos.
+
+### 5. Cargar los datos de ejemplo (una sola vez)
+
+```sh
+docker compose run --rm --no-deps backend npm run data:examples
+```
+
+Si se corre de nuevo, falla por datos duplicados y no cambia nada.
+
+### 6. Usarlo
+
+- Panel de la empresa: <http://localhost:3001/>. Las planillas, **Compras** y
+  **Estadísticas** están en el menú ☰.
+- Página para clientes: <http://localhost:3001/pedido>.
+
+Para probar el flujo completo:
+
+1. Hacé un pedido desde `/pedido`. Aparece solo en la planilla **Pedidos**.
+2. Cambiale el estado a `Confirmado`.
+3. En **Compras**, elegí el pedido, mirá qué hay que comprar y tocá **Marcar entregado**.
+4. En **Ingredientes**, el stock tiene que haber bajado.
+
+### Uso diario
+
+| Para… | Comando |
+|---|---|
+| Apagar | `docker compose down` |
+| Volver a levantar | `docker compose up -d --wait` |
+| Después de un `git pull` (en los dos repos) | `docker compose build`, `docker compose run --rm migrations` y `docker compose up -d --wait` |
+| Ver errores del backend o de las migraciones | `docker compose logs backend` / `docker compose logs migrations` |
+| Borrar la base y empezar de cero | `docker compose down -v` y repetir los pasos 4 y 5 |
+
+### Problemas comunes
+
+- **El build falla al copiar `system-definition`**: falta la carpeta hermana, o está
+  en otra rama (paso 2).
+- **Puerto 5433 o 3001 ocupado**: cerrá lo que lo usa. Para la base también podés
+  cambiar `PGPORT` en `.env`.
+- **"No existe usuario con esas credenciales"**: el usuario inicial se crea solo con
+  la base vacía. Si cambiaste el `.env` después, usá el usuario anterior o borrá la
+  base con `docker compose down -v`.
+
 
 The backend defines its entities with `system-definition` in `src/backend/system.ts`.
 It exports `ssot`, the model produced by the core's `captureSystemSnapshot`, and
@@ -357,7 +469,10 @@ docker compose up --build -d
 docker compose run --rm --no-deps backend npm run data:examples
 ```
 
-The loader uses **tab-plus** to read `examples/data/*.tab`. Each filename names
+The loader uses **tab-plus** to read `examples/data/*.tab`. Example orders live in
+`examples/data/pedidos.json` instead, because each order's code is generated by the
+server; they go through the same validation as the public order API (without the
+minimum-anticipation rule) and keep their listed state. Each filename names
 an SSOT entity; headers use the API's creation-input names. SSOT type behaviours
 decode numbers, booleans and enums, and the ordinary creation path validates and
 transforms every row. `\N` means null; `\E` means empty text. Included foreign-key

@@ -12,6 +12,11 @@ import {loadReferenceSources, type LoadedReferenceSource} from './reference-sour
 import {confirmAction, showDeleteDependencies} from './confirm.js';
 import {scrollCue, updateScrollCues} from './sheet-scroll.js';
 import {createRowEditor, type RowEditor, type Row, type Value} from './row-editor.js';
+import {comprasView} from './compras.js';
+import {estadisticasView} from './estadisticas.js';
+
+// Catering views listed after the spreadsheets in the drawer.
+const cateringViews = [comprasView, estadisticasView];
 
 let labels: Readonly<Record<string, string>> = {};
 
@@ -87,6 +92,13 @@ async function show(name: EntityName): Promise<void> {
     const generation = ++viewGeneration;
     invalidateView = () => {};
     resumeLive = () => {};
+    const view = cateringViews.find(candidate => candidate.name === name);
+    if (view) {
+        canLeaveView = async () => true;
+        const invalidate = await view.show(content);
+        if (generation === viewGeneration) invalidateView = invalidate;
+        return;
+    }
     let entity: EntityResponse;
     let sources: LoadedReferenceSource[];
     for (;;) {
@@ -497,7 +509,7 @@ initializeAuthentication(active => {
         if (!isAuthenticated()) return;
         allEntities = catalog.map(entity => entity.name);
         labels = Object.fromEntries(catalog.map(entity => [entity.name, entity.label]));
-        navigation.catalog(catalog);
+        navigation.catalog([...catalog, ...cateringViews.map(({name, label}) => ({name, label}))]);
         if (allEntities[0]) await selectTab(allEntities[0]);
         else content.textContent = 'No hay planillas disponibles.';
         stopWatching = watchEntities(name => { cache.invalidate(name); invalidateView(name); });
