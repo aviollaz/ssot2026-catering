@@ -111,6 +111,33 @@ Para probar el flujo completo:
   la base vacía. Si cambiaste el `.env` después, usá el usuario anterior o borrá la
   base con `docker compose down -v`.
 
+## Mantenerse al día con la clase
+
+Este repo comparte historia con `ari-dc-uba-ar/ssot2026`, pero no es un fork de
+GitHub, así que `origin` apunta acá y no a la clase. Cada uno, en su clon, suma el
+repo de la clase como `upstream` una sola vez:
+
+```sh
+git remote add upstream https://github.com/ari-dc-uba-ar/ssot2026
+```
+
+| Para… | Comando |
+|---|---|
+| Ver qué cambió en la clase | `git fetch upstream` y `git log --oneline main..upstream/main` |
+| Traer esos cambios | en una rama nueva desde `main`: `git merge upstream/main`, probar y abrir un PR |
+
+`system-definition` se usa desde la rama `refactor/migrations-full`; el último commit
+probado con el TP está en `.system-definition-rev`. Para volver a ese commit:
+`git -C ../system-definition checkout $(cat .system-definition-rev)`.
+
+El workflow `.github/workflows/upstream-check.yml` corre todos los días y abre (o
+actualiza) el issue "Novedades en los repos de la clase" cuando `upstream/main` tiene
+commits sin mergear o `refactor/migrations-full` avanzó más allá de
+`.system-definition-rev`. También se puede correr a mano desde la pestaña Actions.
+
+Los PRs a la clase salen del fork personal (`aviollaz/ssot2026`), nunca de este repo,
+para no arrastrar código de catering.
+
 
 The backend defines its entities with `system-definition` in `src/backend/system.ts`.
 It exports `ssot`, the model produced by the core's `captureSystemSnapshot`, and
