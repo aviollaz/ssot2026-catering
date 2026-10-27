@@ -4,7 +4,11 @@ import express from 'express';
 import {withTestDatabase} from './helpers/database.mjs';
 import {initializeUsers} from '../dist/backend/bootstrap.js';
 import {createAuthentication} from '../dist/backend/auth.js';
-import {cargarPedidosEjemplo, comprasDePedido, comprasDePeriodo, crearPedido, entregarPedido, estadisticas, registerCateringApi} from '../dist/backend/catering.js';
+import {anularMovimiento, cargarMovimientosEjemplo, opcionesInventario, cargarPedidosEjemplo, comprasDePedido, comprasDePeriodo, crearPedido, estadisticas, historialMovimientos,
+    registerCateringApi, registrarMovimiento} from '../dist/backend/catering.js';
+import {registerEntityApi} from '../dist/backend/api.js';
+import {exportarTablas} from '../dist/backend/exportar.js';
+import {inflateRawSync} from 'node:zlib';
 import {loadTabData} from '../dist/backend/tab-data.js';
 import {localDateTime} from '../dist/backend/value-types.js';
 
@@ -63,20 +67,133 @@ test('recipes accept fractional quantities and purchases round them up', async (
     });
 });
 
-test('delivering an order takes its consumption out of the stock in the same transaction', async () => {
+const stock = async pool => Object.fromEntries((await pool.query('SELECT cod_ing, stock_actual FROM ssot.ingredientes ORDER BY cod_ing')).rows
+    .map(row => [row.cod_ing, row.stock_actual]));
+const estado = async (pool, id) => (await pool.query('SELECT estado FROM ssot.pedidos WHERE id = $1', [id])).rows[0].estado;
+const egreso = (pedido, porciones, extra = {}) => ({tipo: 'Egreso', pedido, platos: [{cod_plato: 'PAN', porciones}], ...extra});
+
+test('an Egreso takes the dishes actually made out of the stock and delivers the order', async () => {
     await withTestDatabase(async ({pool}) => {
         const {A, B, P} = await fixture(pool);
-        await assert.rejects(entregarPedido(pool, P), {status: 409});
-        assert.deepEqual(await entregarPedido(pool, A), {consumo: [{cod_ing: 'HAR', cantidad: 600}, {cod_ing: 'SAL', cantidad: 3}]});
-        assert.deepEqual((await pool.query('SELECT cod_ing, stock_actual FROM ssot.ingredientes ORDER BY cod_ing')).rows,
-            [{cod_ing: 'HAR', stock_actual: 400}, {cod_ing: 'SAL', stock_actual: 97}]);
-        assert.deepEqual((await pool.query('SELECT estado FROM ssot.pedidos WHERE id = $1', [A])).rows, [{estado: 'Entregado'}]);
+        await assert.rejects(registrarMovimiento(pool, egreso(P, 1)), {status: 409});
+        // A quoted 6 portions but only 4 were made: the preview shows the change and saves nothing.
+        const vista = await registrarMovimiento(pool, egreso(A, 4), {simular: true});
+        assert.deepEqual(vista.ingredientes, [{cod_ing: 'HAR', cantidad: -400}, {cod_ing: 'SAL', cantidad: -2}]);
+        assert.deepEqual(await stock(pool), {HAR: 1000, SAL: 100});
+        assert.equal(await estado(pool, A), 'Confirmado');
+        assert.equal((await pool.query('SELECT count(*)::int AS n FROM ssot.movimientos')).rows[0].n, 0);
+
+        const {ingredientes} = await registrarMovimiento(pool, egreso(A, 4, {facturado: 500, observaciones: 'Faltaron 2 invitados'}));
+        assert.deepEqual(ingredientes, [{cod_ing: 'HAR', cantidad: -400}, {cod_ing: 'SAL', cantidad: -2}]);
+        assert.deepEqual(await stock(pool), {HAR: 600, SAL: 98});
+        assert.equal(await estado(pool, A), 'Entregado');
+        await assert.rejects(registrarMovimiento(pool, egreso(A, 4)), {status: 409});
         // A delivered order already left the stock, so it no longer counts as previous consumption.
-        assert.deepEqual(resumen(await comprasDePedido(pool, B)).HAR, {stock: 400, necesidad: 800, consumo_previo: 0, faltante: 400, comprar: 400});
-        await assert.rejects(entregarPedido(pool, A), {status: 409});
-        // Stock never goes below zero, even when the missing purchase was not loaded.
-        await entregarPedido(pool, B);
-        assert.equal((await pool.query("SELECT stock_actual FROM ssot.ingredientes WHERE cod_ing = 'HAR'")).rows[0].stock_actual, 0);
+        assert.deepEqual(resumen(await comprasDePedido(pool, B)).HAR, {stock: 600, necesidad: 800, consumo_previo: 0, faltante: 200, comprar: 200});
+        // The real billing replaces the quote in the statistics: 500 for A plus B's 800.
+        assert.equal((await estadisticas(pool)).porMes[0].facturacion, 1300);
+
+        // Without an order (a spontaneous sale): stock never goes below 0, and the ledger keeps what actually changed.
+        const espontaneo = await registrarMovimiento(pool, egreso(null, 100));
+        assert.deepEqual(espontaneo.ingredientes, [{cod_ing: 'HAR', cantidad: -600}, {cod_ing: 'SAL', cantidad: -50}]);
+        assert.deepEqual(await stock(pool), {HAR: 0, SAL: 48});
+        assert.deepEqual((await pool.query('SELECT cod_ing, cantidad FROM ssot.movimiento_ingredientes WHERE movimiento = $1 ORDER BY cod_ing', [espontaneo.id])).rows,
+            [{cod_ing: 'HAR', cantidad: -600}, {cod_ing: 'SAL', cantidad: -50}]);
+
+        for (const [body, message] of [
+            [{tipo: 'Egreso', ingredientes: [{cod_ing: 'HAR', cantidad: 1}]}, /platos que se hicieron/],
+            [{tipo: 'Ingreso', pedido: B, ingredientes: [{cod_ing: 'HAR', cantidad: 1}]}, /solo un egreso se asocia/],
+            [{tipo: 'Merma', facturado: 10, ingredientes: [{cod_ing: 'HAR', cantidad: 1}]}, /solo un egreso registra/],
+            [{tipo: 'Anulación', ingredientes: [{cod_ing: 'HAR', cantidad: 1}]}, /una anulación indica/],
+            [egreso(null, 1, {platos: [{cod_plato: 'NADA', porciones: 1}]}), /NADA no existe/],
+            [egreso(null, 0), /porciones/],
+            [{tipo: 'Egreso', platos: []}, /entre 1 y/],
+        ]) await assert.rejects(registrarMovimiento(pool, body), error => error.status === 400 && message.test(error.message), JSON.stringify(body));
+    });
+});
+
+test('Ingreso, Merma and Ajuste use any unit of the ingredient and record the change', async () => {
+    await withTestDatabase(async ({pool}) => {
+        await fixture(pool);
+        await pool.query(`INSERT INTO ssot.unidades (cod_unidad, nombre, base, factor) VALUES ('kg', 'Kilo', 'g', 1000), ('l', 'Litro', 'ml', 1000)`);
+        const movimiento = (tipo, ingredientes) => registrarMovimiento(pool, {tipo, ingredientes});
+        assert.deepEqual((await movimiento('Ingreso', [{cod_ing: 'HAR', cantidad: 2.5, cod_unidad: 'kg'}, {cod_ing: 'SAL', cantidad: 50}])).ingredientes,
+            [{cod_ing: 'HAR', cantidad: 2500}, {cod_ing: 'SAL', cantidad: 50}]);
+        assert.deepEqual((await movimiento('Merma', [{cod_ing: 'SAL', cantidad: 10, cod_unidad: 'g'}])).ingredientes, [{cod_ing: 'SAL', cantidad: -10}]);
+        assert.deepEqual(await stock(pool), {HAR: 3500, SAL: 140});
+        // An Ajuste is the counted stock: the ledger keeps the difference, and nothing when it matches.
+        assert.deepEqual((await movimiento('Ajuste', [{cod_ing: 'HAR', cantidad: 3, cod_unidad: 'kg'}, {cod_ing: 'SAL', cantidad: 140}])).ingredientes,
+            [{cod_ing: 'HAR', cantidad: -500}]);
+        assert.deepEqual(await stock(pool), {HAR: 3000, SAL: 140});
+        // The stock loaded by hand (1000 g and 100 g in the fixture) is what the history does not explain.
+        const historial = Object.fromEntries((await opcionesInventario(pool)).ingredientes.map(i => [i.cod_ing, [i.stock_actual, i.historial]]));
+        assert.deepEqual(historial, {HAR: [3000, 2000], SAL: [140, 40]});
+        for (const [tipo, lineas, message] of [
+            ['Ingreso', [{cod_ing: 'HAR', cantidad: 1, cod_unidad: 'l'}], /no sirve para HAR/],
+            ['Ingreso', [{cod_ing: 'HAR', cantidad: 1, cod_unidad: 'pallet'}], /no sirve para HAR/],
+            ['Ingreso', [{cod_ing: 'NADA', cantidad: 1}], /NADA no existe/],
+            ['Merma', [{cod_ing: 'HAR', cantidad: 0}], /mayores que 0/],
+            ['Ajuste', [{cod_ing: 'HAR', cantidad: -1}], /negativo/],
+            ['Ingreso', [{cod_ing: 'HAR', cantidad: 1}, {cod_ing: 'HAR', cantidad: 2}], /una sola vez/],
+        ]) await assert.rejects(movimiento(tipo, lineas), error => error.status === 400 && message.test(error.message), tipo);
+        assert.deepEqual(await stock(pool), {HAR: 3000, SAL: 140});
+        assert.deepEqual((await historialMovimientos(pool)).map(m => m.tipo).sort(), ['Ajuste', 'Ingreso', 'Merma']);
+    });
+});
+
+test('annulling a movement reverses its stock change and returns its order to Confirmado', async () => {
+    await withTestDatabase(async ({pool}) => {
+        const {A} = await fixture(pool);
+        const {id} = await registrarMovimiento(pool, egreso(A, 6));
+        assert.deepEqual(await stock(pool), {HAR: 400, SAL: 97});
+        const anulacion = await anularMovimiento(pool, id);
+        assert.deepEqual(anulacion.ingredientes, [{cod_ing: 'HAR', cantidad: 600}, {cod_ing: 'SAL', cantidad: 3}]);
+        assert.deepEqual(await stock(pool), {HAR: 1000, SAL: 100});
+        assert.equal(await estado(pool, A), 'Confirmado');
+        await assert.rejects(anularMovimiento(pool, id), {status: 409});
+        await assert.rejects(anularMovimiento(pool, anulacion.id), {status: 409});
+        await assert.rejects(anularMovimiento(pool, '00000000-0000-4000-8000-000000000000'), {status: 404});
+        const historial = await historialMovimientos(pool);
+        assert.deepEqual(historial.find(m => m.tipo === 'Anulación').anula, id);
+        assert.equal(historial.find(m => m.id === id).anulado, true);
+        // The order can now be delivered again with its real dishes.
+        await registrarMovimiento(pool, egreso(A, 5));
+        assert.equal(await estado(pool, A), 'Entregado');
+    });
+});
+
+// Reads back every entry of a zip through its central directory, as Excel does.
+function unzip(buffer) {
+    const end = buffer.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+    const files = {};
+    for (let i = 0, at = buffer.readUInt32LE(end + 16); i < buffer.readUInt16LE(end + 10); i++) {
+        const [size, nameLength, offset] = [buffer.readUInt32LE(at + 20), buffer.readUInt16LE(at + 28), buffer.readUInt32LE(at + 42)];
+        const name = buffer.toString('utf8', at + 46, at + 46 + nameLength);
+        const start = offset + 30 + buffer.readUInt16LE(offset + 26);
+        files[name] = inflateRawSync(buffer.subarray(start, start + size)).toString('utf8');
+        at += 46 + nameLength;
+    }
+    return files;
+}
+
+test('tables export to an Excel workbook with names instead of codes and without contact data by default', async () => {
+    await withTestDatabase(async ({pool}) => {
+        await fixture(pool);
+        const files = unzip(await exportarTablas(pool, ['recetas', 'pedidos']));
+        assert.ok(['[Content_Types].xml', '_rels/.rels', 'xl/workbook.xml', 'xl/styles.xml', 'xl/worksheets/sheet2.xml'].every(name => name in files));
+        assert.match(files['xl/workbook.xml'], /<sheet name="Recetas" sheetId="1" r:id="rId1"\/><sheet name="Pedidos"/);
+        const recetas = files['xl/worksheets/sheet1.xml'];
+        // Column labels from the SSOT, the dish and ingredient by name, and quantities as numbers.
+        assert.match(recetas, /<row r="1"><c r="A1" t="inlineStr" s="1"><is><t xml:space="preserve">Plato<\/t>/);
+        assert.match(recetas, /<t xml:space="preserve">Pan<\/t><\/is><\/c><c r="B\d" t="inlineStr"><is><t xml:space="preserve">Harina<\/t><\/is><\/c><c r="C\d"><v>1000<\/v>/);
+        assert.doesNotMatch(files['xl/worksheets/sheet2.xml'], /ana@example\.com|Calle 1/);
+        assert.match(unzip(await exportarTablas(pool, ['pedidos'], {contacto: true}))['xl/worksheets/sheet1.xml'], /ana@example\.com/);
+        // The sheet's own filters apply across every page.
+        const filtrada = unzip(await exportarTablas(pool, ['recetas'], {consulta: {where: {cod_plato: 'OFF'}, sort: 'cod_ing', direction: 'desc'}}));
+        assert.equal([...filtrada['xl/worksheets/sheet1.xml'].matchAll(/<row /g)].length, 2);
+        for (const [tablas, opciones] of [[['usuarios']], [['recetas', 'recetas']], [[]], [['recetas', 'platos'], {consulta: {}}], [['recetas'], {consulta: {sort: 'nada'}}]]) {
+            await assert.rejects(exportarTablas(pool, tablas, opciones), {status: 400}, JSON.stringify(tablas));
+        }
     });
 });
 
@@ -95,6 +212,9 @@ test('the example data reproduces the documented purchase calculation', async ()
     await withTestDatabase(async ({pool}) => {
         await loadTabData(pool, 'examples/data');
         assert.equal(await cargarPedidosEjemplo(pool, 'examples/data/pedidos.json'), 5);
+        // A purchase of water comes in bidones of 6 l.
+        assert.equal(await cargarMovimientosEjemplo(pool, 'examples/data/movimientos.json'), 1);
+        assert.equal((await pool.query("SELECT stock_actual FROM ssot.ingredientes WHERE cod_ing = 'AGU'")).rows[0].stock_actual, 32000);
         const {rows} = await pool.query("SELECT id, cliente_nombre FROM ssot.pedidos WHERE estado = 'Confirmado' ORDER BY fecha_evento");
         const [ana, bruno] = await Promise.all(rows.map(row => comprasDePedido(pool, row.id).then(resumen)));
         assert.deepEqual(rows.map(row => row.cliente_nombre), ['Ana Gómez', 'Bruno Díaz']);
@@ -112,6 +232,7 @@ test('the public API validates orders against the SSOT and business rules and ne
         const app = express(), auth = createAuthentication(pool, 'catering-test-secret-with-at-least-32-bytes');
         const published = [];
         registerCateringApi(app, pool, auth, name => published.push(name));
+        registerEntityApi(app, pool, auth);
         const server = await new Promise(resolve => { const server = app.listen(0, '127.0.0.1', () => resolve(server)); });
         t.after(() => new Promise(resolve => server.close(resolve)));
         const base = `http://127.0.0.1:${server.address().port}`;
@@ -173,13 +294,31 @@ test('the public API validates orders against the SSOT and business rules and ne
         }
         assert.equal((await request('/api/public/pedidos')).status, 404);
 
-        // Purchases, deliveries and statistics require a session.
-        for (const path of ['/api/catering/pedidos', `/api/catering/pedidos/${id}/compras`, '/api/catering/estadisticas', '/api/catering/compras?desde=2026-11-01&hasta=2026-11-30']) {
+        // Purchases, inventory and statistics require a session.
+        for (const path of ['/api/catering/pedidos', `/api/catering/pedidos/${id}/compras`, `/api/catering/pedidos/${id}/egreso`, '/api/catering/estadisticas',
+            '/api/catering/compras?desde=2026-11-01&hasta=2026-11-30', '/api/catering/inventario', '/api/catering/movimientos',
+            '/api/catering/exportar/tablas', '/api/catering/exportar?tablas=platos,pedidos']) {
             assert.equal((await request(path)).status, 401, path);
             assert.equal((await request(path, undefined, token)).status, 200, path);
         }
-        assert.equal((await request(`/api/catering/pedidos/${id}/entregar`, {})).status, 401);
-        assert.equal((await request(`/api/catering/pedidos/${id}/entregar`, {}, token)).status, 409);
+        const entrega = {tipo: 'Egreso', pedido: id, platos: [{cod_plato: 'PAN', porciones: 20}]};
+        assert.equal((await request('/api/catering/movimientos', entrega)).status, 401);
+        // A pending order cannot be delivered, and nothing is published.
+        published.length = 0;
+        assert.equal((await request('/api/catering/movimientos', entrega, token)).status, 409);
+        assert.equal((await request('/api/catering/movimientos/simular', {...entrega, pedido: null}, token)).status, 200);
+        assert.deepEqual(published, []);
+        const ingreso = await request('/api/catering/movimientos', {tipo: 'Ingreso', ingredientes: [{cod_ing: 'SAL', cantidad: 1}]}, token);
+        assert.equal(ingreso.status, 201);
+        assert.ok(published.includes('ingredientes') && published.includes('movimientos'));
+        assert.equal((await request(`/api/catering/movimientos/${(await ingreso.json()).id}/anular`, {}, token)).status, 201);
+        // The movement history is written only by the inventory endpoints, never by the generic sheets.
+        const send = (path, method, body) => fetch(`${base}/api/entities/${path}`, {method,
+            headers: {'Content-Type': 'application/json', Authorization: `Bearer ${token}`}, body: JSON.stringify(body)});
+        assert.equal((await send('movimientos', 'POST', {fecha: '2026-11-01T10:00', tipo: 'Ingreso', pedido: null, facturado: null, anula: null, observaciones: null})).status, 405);
+        assert.equal((await send('movimiento_ingredientes', 'DELETE', {movimiento: id, cod_ing: 'SAL'})).status, 405);
+        const movimientosSheet = await (await fetch(`${base}/api/entities/movimientos`, {headers: {Authorization: `Bearer ${token}`}})).json();
+        assert.equal(movimientosSheet.readOnly, true);
         assert.equal((await request('/api/catering/compras?desde=hoy&hasta=2026-11-30', undefined, token)).status, 400);
         const pendientes = await (await request('/api/catering/pedidos', undefined, token)).json();
         assert.ok(pendientes.every(pedido => ['Pendiente', 'Confirmado'].includes(pedido.estado)));

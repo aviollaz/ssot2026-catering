@@ -83,7 +83,10 @@ test('table navigation and spreadsheet work with the real API', {timeout: 90000}
                 await evaluate("document.querySelector('#open-tables').click()");
                 assert.equal(await evaluate("return document.querySelector('#tables-panel').matches(':modal')"), true);
                 await evaluate("const input=document.querySelector('#table-search'); input.value='ingred'; input.dispatchEvent(new Event('input'))");
-                assert.deepEqual(await evaluate("return [...document.querySelectorAll('#table-list button')].filter(b=>!b.hidden).map(b=>b.textContent)"), ['Ingredientes']);
+                assert.deepEqual(await evaluate("return [...document.querySelectorAll('#table-list button')].filter(b=>!b.hidden).map(b=>b.textContent)"), ['Ingredientes', 'Ingredientes por movimiento']);
+                // Searching opens the areas with matches, even one closed by default, and hides the rest.
+                assert.deepEqual(await evaluate("return [...document.querySelectorAll('#table-list details')].filter(d=>!d.hidden).map(d=>[d.querySelector('summary').textContent, d.open])"),
+                    [['Cocina', true], ['Avanzado', true]]);
                 await evaluate("document.querySelector('[data-entity=ingredientes]').click()");
                 await until(() => evaluate("return !document.querySelector('#workspace').disabled && document.querySelector('.sheet-heading h2')?.textContent === 'Ingredientes'"));
                 assert.equal(await evaluate("return document.querySelector('#tables-panel').open"), false);
@@ -148,7 +151,7 @@ test('table navigation and spreadsheet work with the real API', {timeout: 90000}
                 await until(() => evaluate("return document.querySelector('th[data-column=stock_actual]').getAttribute('aria-sort') === 'ascending' && document.querySelector('tbody [name=stock_actual]')?.value === '1'"));
                 await evaluate("document.querySelector('th[data-column=stock_actual] .column-pin').click()");
                 assert.equal(await evaluate("return document.querySelectorAll('.pinned-col').length"), 0);
-                assert.deepEqual(await evaluate("return [...document.querySelectorAll('thead [data-column]')].map(cell=>cell.dataset.column)"), ['cod_ing','nombre','unidad','stock_actual']);
+                assert.deepEqual(await evaluate("return [...document.querySelectorAll('thead [data-column]')].map(cell=>cell.dataset.column)"), ['cod_ing','nombre','unidad','stock_actual','unidad_compra']);
                 await evaluate("document.querySelector('.table-scroll').scrollLeft=0");
                 await until(() => evaluate("return document.querySelector('.scroll-cue[data-direction=left]').disabled && !document.querySelector('.scroll-cue[data-direction=right]').disabled"));
                 assert.equal(await evaluate("return getComputedStyle(document.querySelector('.scroll-cue[data-direction=right]')).visibility"), 'visible');
@@ -204,21 +207,26 @@ test('table navigation and spreadsheet work with the real API', {timeout: 90000}
                 }
                 // Catering views share the drawer: purchases for the confirmed order, its delivery, and statistics.
                 await send('Emulation.setDeviceMetricsOverride', {width: 1440, height: 900, deviceScaleFactor: 1, mobile: false});
-                // An order's details list its dishes too, and the whole dialog fits without scrolling.
-                await evaluate("document.querySelector('tbody .row-actions [aria-label=\"Ver datos actuales\"]').click()");
-                await until(() => evaluate(`const dialog=document.querySelector('dialog.review-dialog[open]');
-                    return !!dialog?.querySelector('.catering-table tbody tr') && dialog.scrollWidth <= dialog.clientWidth && dialog.scrollHeight <= dialog.clientHeight`));
-                await evaluate("[...document.querySelectorAll('dialog.review-dialog button')].find(b => b.textContent === 'Cerrar').click()");
+                // An order's details list its dishes, editable in place, and the whole dialog fits without scrolling.
+                await evaluate("document.querySelector('tbody .row-actions [aria-label=\"Detalle\"]').click()");
+                await until(() => evaluate(`const dialog=document.querySelector('dialog.detalle-dialog[open]');
+                    return !!dialog?.querySelector('.detalle-table tbody tr select') && dialog.querySelectorAll('.detalle-hijos').length === 1 && dialog.scrollWidth <= dialog.clientWidth && dialog.scrollHeight <= dialog.clientHeight`));
+                await evaluate("document.querySelector('dialog.detalle-dialog .dialog-header [aria-label=Cerrar]').click()");
                 await until(() => evaluate("return !document.querySelector('dialog.review-dialog')"));
                 await evaluate("document.querySelector('[data-entity=compras]').click()");
                 await until(() => evaluate("return !document.querySelector('#workspace').disabled && document.querySelector('.catering-view h2')?.textContent === 'Compras' && !!document.querySelector('.catering-table')"));
                 // 120 empanadas need 120 × 600 / 12 = 6000 g of I001, with 1 g in stock.
                 assert.deepEqual(await evaluate("return [...document.querySelector('.catering-table tbody tr').cells].map(cell => cell.textContent)"),
                     ['Ingrediente 1', 'g', '1', '6.000', '0', '5.999', '5.999']);
-                await evaluate("[...document.querySelectorAll('.catering-view button')].find(b => b.textContent === 'Marcar entregado').click()");
+                // Delivering opens Inventario with the order's dishes, ready to correct and register as an Egreso.
+                await evaluate("[...document.querySelectorAll('.catering-view button')].find(b => b.textContent === 'Registrar egreso').click()");
+                await until(() => evaluate(`return !document.querySelector('#workspace').disabled && document.querySelector('.catering-view h2')?.textContent === 'Inventario'
+                    && document.querySelector('.inventario-form tbody select')?.selectedOptions[0]?.textContent.startsWith('EMP')
+                    && document.querySelector('.inventario-form tbody input')?.value === '120'`));
+                await evaluate("document.querySelector('.inventario-form').requestSubmit()");
                 await until(() => evaluate("return document.querySelector('#confirm-dialog').open"));
                 await evaluate("document.querySelector('#confirm-ok').click()");
-                await until(() => evaluate("return /entregado/.test(document.querySelector('.catering-status').textContent)"));
+                await until(() => evaluate("return /Egreso registrado/.test(document.querySelector('.catering-status').textContent)"));
                 assert.deepEqual((await pool.query("SELECT estado FROM ssot.pedidos")).rows, [{estado: 'Entregado'}]);
                 assert.deepEqual((await pool.query("SELECT stock_actual FROM ssot.ingredientes WHERE cod_ing = 'I001'")).rows, [{stock_actual: 0}]);
                 await evaluate("document.querySelector('[data-entity=estadisticas]').click()");

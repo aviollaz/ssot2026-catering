@@ -49,11 +49,22 @@ const myTypes = defineTypes({
     }),
 })
 
+// Stock and recipes stay in the base unit (g, ml, u); unidad_compra is only how it is shown and bought.
 const ingrediente = defineRecord(myTypes,{
-    cod_ing      :{ type:'text', label: 'Código' },
-    nombre       :{ type:'text', label: 'Ingrediente', isName: true, nullable: false },
-    unidad       :{ type:'unidad', label: 'Unidad', nullable: false },
-    stock_actual :{ type:'cantidad', label: 'Stock actual', nullable: false },
+    cod_ing       :{ type:'text', label: 'Código' },
+    nombre        :{ type:'text', label: 'Ingrediente', isName: true, nullable: false },
+    unidad        :{ type:'unidad', label: 'Unidad base', nullable: false },
+    // Editable by hand, which leaves no movement: Inventario shows the difference with the movement history.
+    stock_actual  :{ type:'cantidad', label: 'Stock actual', nullable: false },
+    unidad_compra :{ type:'text', label: 'Unidad de compra' },
+})
+
+// A conversion: one of this unit is `factor` of its base unit (1 kg = 1000 g, 1 bolsa = 25000 g).
+const unidad_medida = defineRecord(myTypes,{
+    cod_unidad :{ type:'text', label: 'Código' },
+    nombre     :{ type:'text', label: 'Unidad', isName: true, nullable: false },
+    base       :{ type:'unidad', label: 'Unidad base', nullable: false },
+    factor     :{ type:'posDecimal', label: 'Equivale a (en unidad base)', nullable: false },
 })
 
 const plato = defineRecord(myTypes,{
@@ -111,6 +122,31 @@ const pedido_plato = defineRecord(myTypes,{
     precio_porcion :{ type:'posInteger', label: 'Precio por porción', nullable: false },
 })
 
+// A stock movement. Its quantities per ingredient are the stock ledger; an Egreso also keeps the dishes made.
+const movimiento = defineRecord(myTypes,{
+    id            :{ type:'text', label: 'Código', writable: false as const, onCreate: 'uuid' as const },
+    fecha         :{ type:'fechaHora', label: 'Fecha', isName: true, nullable: false },
+    tipo          :{ type:'tipoMovimiento', label: 'Tipo', isName: true, nullable: false },
+    pedido        :{ type:'text', label: 'Pedido' },
+    // What was actually charged, which may differ from the order's quoted total.
+    facturado     :{ type:'cantidad', label: 'Facturado' },
+    anula         :{ type:'text', label: 'Anula a' },
+    observaciones :{ type:'text', label: 'Observaciones' },
+})
+
+const movimiento_plato = defineRecord(myTypes,{
+    movimiento :{ type:'text', label: 'Movimiento' },
+    cod_plato  :{ type:'text', label: 'Plato' },
+    porciones  :{ type:'posInteger', label: 'Porciones hechas', nullable: false },
+})
+
+// Signed change of stock, in the ingredient's base unit.
+const movimiento_ingrediente = defineRecord(myTypes,{
+    movimiento :{ type:'text', label: 'Movimiento' },
+    cod_ing    :{ type:'text', label: 'Ingrediente' },
+    cantidad   :{ type:'integer', label: 'Cantidad (unidad base)', nullable: false },
+})
+
 const usuario = defineRecord(myTypes, {
     id: {type: 'text', nullable: false, writable: false as const, visible: false as const, onCreate: 'uuid' as const},
     usuario: {type: 'text', label: 'Usuario', nullable: false, transform: 'username' as const},
@@ -122,7 +158,8 @@ const usuario = defineRecord(myTypes, {
         onCreate: 'uuid' as const, onUpdate: 'uuid' as const},
 });
 
-export const myRecords = withRecords(myTypes, {ingrediente, plato, receta, servicio, servicio_plato, pedido, pedido_plato, usuario})
+export const myRecords = withRecords(myTypes, {ingrediente, unidad_medida, plato, receta, servicio, servicio_plato, pedido, pedido_plato,
+    movimiento, movimiento_plato, movimiento_ingrediente, usuario})
 
 function validarPedido(pedido:{personas?:number | null, cliente_email?:string | null}){
     var problemas: Problem[] = []
@@ -141,12 +178,30 @@ function validarPedido(pedido:{personas?:number | null, cliente_email?:string | 
     return problemas;
 }
 
-export const myContext = withValidators(myRecords, {validarPedido})
+// Only an Egreso (or its Anulación) belongs to an order, only an Egreso records what was charged,
+// and only an Anulación points to the movement it reverses.
+function validarMovimiento(movimiento:{tipo?:string | null, pedido?:string | null, facturado?:number | null, anula?:string | null}){
+    var problemas: Problem[] = []
+    const problema = (field: string, messageKey: string) => problemas.push({field, messageKey, severity: 'regular', details: {}} satisfies Problem)
+    if (movimiento.tipo !== 'Egreso' && movimiento.tipo !== 'Anulación' && movimiento.pedido != null) problema('pedido', 'solo un egreso se asocia a un pedido')
+    if (movimiento.tipo !== 'Egreso' && movimiento.facturado != null) problema('facturado', 'solo un egreso registra lo facturado')
+    if ((movimiento.tipo === 'Anulación') !== (movimiento.anula != null)) problema('anula', 'una anulación indica el movimiento que anula, y solo ella')
+    return problemas;
+}
+
+export const myContext = withValidators(myRecords, {validarPedido, validarMovimiento})
 
 const ingredientes = defineEntity(myContext, {
     name: 'ingredientes',
     record: 'ingrediente',
-    pk: ['cod_ing']
+    pk: ['cod_ing'],
+    fks: {unidad_compra: {entity: 'unidades', fields: {unidad_compra: 'cod_unidad'}}}
+})
+
+const unidades = defineEntity(myContext, {
+    name: 'unidades',
+    record: 'unidad_medida',
+    pk: ['cod_unidad']
 })
 
 const platos = defineEntity(myContext, {
@@ -190,6 +245,28 @@ const pedido_platos = defineEntity(myContext, {
     fks: {pedido: {entity: 'pedidos', fields: {pedido: 'id'}}, plato: {entity: 'platos', fields: ['cod_plato']}}
 })
 
+const movimientos = defineEntity(myContext, {
+    name: 'movimientos',
+    record: 'movimiento',
+    pk: ['id'],
+    fks: {pedido: {entity: 'pedidos', fields: {pedido: 'id'}}, anula: {entity: 'movimientos', fields: {anula: 'id'}}},
+    validators: ['validarMovimiento']
+})
+
+const movimiento_platos = defineEntity(myContext, {
+    name: 'movimiento_platos',
+    record: 'movimiento_plato',
+    pk: ['movimiento', 'cod_plato'],
+    fks: {movimiento: {entity: 'movimientos', fields: {movimiento: 'id'}}, plato: {entity: 'platos', fields: ['cod_plato']}}
+})
+
+const movimiento_ingredientes = defineEntity(myContext, {
+    name: 'movimiento_ingredientes',
+    record: 'movimiento_ingrediente',
+    pk: ['movimiento', 'cod_ing'],
+    fks: {movimiento: {entity: 'movimientos', fields: {movimiento: 'id'}}, ingrediente: {entity: 'ingredientes', fields: ['cod_ing']}}
+})
+
 // Required by authentication, including the narrowly scoped anonymous login/recovery operations.
 export const authenticationEntity = 'usuarios';
 const usuarios = defineEntity(myContext, {
@@ -199,13 +276,31 @@ const usuarios = defineEntity(myContext, {
     uks: {usuario_unico: ['usuario']},
 });
 
-export const myEntities = defineEntities({pedidos, pedido_platos, platos, recetas, ingredientes, servicios, servicio_platos, usuarios})
+export const myEntities = defineEntities({pedidos, pedido_platos, platos, recetas, ingredientes, unidades, servicios, servicio_platos,
+    movimientos, movimiento_platos, movimiento_ingredientes, usuarios})
 
 // Presentation is app-owned metadata; browsers receive it through the API.
 export const entityLabels = {
     pedidos: 'Pedidos', pedido_platos: 'Platos por pedido', platos: 'Platos', recetas: 'Recetas',
-    ingredientes: 'Ingredientes', servicios: 'Servicios', servicio_platos: 'Platos por servicio', usuarios: 'Usuarios',
+    ingredientes: 'Ingredientes', unidades: 'Unidades', servicios: 'Servicios', servicio_platos: 'Platos por servicio',
+    movimientos: 'Movimientos de stock', movimiento_platos: 'Platos por movimiento', movimiento_ingredientes: 'Ingredientes por movimiento',
+    usuarios: 'Usuarios',
 } satisfies Record<keyof typeof myEntities, string>;
+
+// Area of each sheet in the ☰ menu; "Area/Subarea" nests one inside another.
+export const entityAreas = {
+    pedidos: 'Ventas', servicios: 'Ventas', platos: 'Cocina', ingredientes: 'Cocina', unidades: 'Cocina',
+    movimientos: 'Inventario', recetas: 'Avanzado', servicio_platos: 'Avanzado', pedido_platos: 'Avanzado',
+    movimiento_platos: 'Avanzado', movimiento_ingredientes: 'Avanzado', usuarios: 'Avanzado',
+} satisfies Record<keyof typeof myEntities, string>;
+
+// Child tables shown and edited in a row's Detalle, such as a dish's recipe. Each one needs a foreign key to its parent.
+export const entityDetails = {
+    platos: ['recetas'], servicios: ['servicio_platos'], pedidos: ['pedido_platos'],
+} satisfies Partial<Record<keyof typeof myEntities, readonly (keyof typeof myEntities)[]>>;
+
+// Sheets that only the inventory endpoints write, so the stock history cannot be edited or deleted.
+export const readOnlyEntities: readonly (keyof typeof myEntities)[] = ['movimientos', 'movimiento_platos', 'movimiento_ingredientes'];
 
 const snapshot = captureSystemSnapshot(myContext, {
     systemId: 'ssot2026',
@@ -224,6 +319,7 @@ export const sqlMapping = {
     unidad: sqlTypes.text,
     categoria: sqlTypes.text,
     estadoPedido: sqlTypes.text,
+    tipoMovimiento: sqlTypes.text,
     fechaHora: sqlTypes.timestamp,
     boolean: sqlTypes.boolean,
     password: sqlTypes.text,

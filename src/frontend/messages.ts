@@ -10,6 +10,7 @@ const typeNames: Readonly<Record<string, string>> = {
     unidad: 'una opción de la lista',
     categoria: 'una opción de la lista',
     estadoPedido: 'una opción de la lista',
+    tipoMovimiento: 'una opción de la lista',
     fechaHora: 'una fecha y hora válida',
     boolean: 'verdadero o falso',
     password: 'una contraseña válida',

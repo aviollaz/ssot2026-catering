@@ -34,9 +34,16 @@ async function request(path: string, method = 'GET', body?: unknown, signal?: Ab
     return response;
 }
 
-// Authenticated catering endpoints (purchases, deliveries, statistics).
-export async function cateringRequest<T>(path: string, method = 'GET'): Promise<T> {
-    return (await request(`/api/catering${path}`, method, method === 'GET' ? undefined : {})).json() as Promise<T>;
+// Authenticated catering endpoints (purchases, inventory, statistics).
+export async function cateringRequest<T>(path: string, method = 'GET', body: unknown = {}): Promise<T> {
+    return (await request(`/api/catering${path}`, method, method === 'GET' ? undefined : body)).json() as Promise<T>;
+}
+
+// A file from a catering endpoint, such as an Excel export, with its suggested name.
+export async function cateringDownload(path: string): Promise<{blob: Blob; filename: string}> {
+    const response = await request(`/api/catering${path}`);
+    const filename = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') ?? '')?.[1] ?? 'export.xlsx';
+    return {blob: await response.blob(), filename};
 }
 
 const path = (name: EntityName) => `/api/entities/${encodeURIComponent(name)}`;

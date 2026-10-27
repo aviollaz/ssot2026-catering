@@ -1,14 +1,14 @@
-cod_ing|nombre|unidad|stock_actual
-HAR|Harina 0000|g|5000
-MAN|Manteca|g|1000
-HUE|Huevo|u|30
-QUE|Queso cremoso|g|2000
-JAM|Jamón cocido|g|1500
-TOM|Tomate|g|3000
-LOM|Lomo|g|4000
-PAP|Papa|g|10000
-CRE|Crema de leche|ml|2000
-AZU|Azúcar|g|3000
-CHO|Chocolate semiamargo|g|1000
-LIM|Limón|u|20
-AGU|Agua mineral|ml|20000
+cod_ing|nombre|unidad|stock_actual|unidad_compra
+HAR|Harina 0000|g|5000|bolsa25
+MAN|Manteca|g|1000|pan500
+HUE|Huevo|u|30|maple
+QUE|Queso cremoso|g|2000|kg
+JAM|Jamón cocido|g|1500|kg
+TOM|Tomate|g|3000|kg
+LOM|Lomo|g|4000|kg
+PAP|Papa|g|10000|kg
+CRE|Crema de leche|ml|2000|l
+AZU|Azúcar|g|3000|kg
+CHO|Chocolate semiamargo|g|1000|kg
+LIM|Limón|u|20|doc
+AGU|Agua mineral|ml|20000|bidon6

@@ -3,6 +3,8 @@ import {boxType, commonTypeBehaviours, commonTypeDefs, notParsed, parsed, type T
 const unidadValues = ['g', 'ml', 'u'] as const;
 const categoriaValues = ['Entrada', 'Principal', 'Postre', 'Bebida', 'Finger food'] as const;
 const estadoPedidoValues = ['Pendiente', 'Confirmado', 'Entregado', 'Cancelado'] as const;
+// Anulación reverses an earlier movement, so the stock history is never rewritten.
+const tipoMovimientoValues = ['Ingreso', 'Egreso', 'Merma', 'Ajuste', 'Anulación'] as const;
 
 export const appTypeDefs = {
     ...commonTypeDefs,
@@ -14,6 +16,7 @@ export const appTypeDefs = {
     unidad: {tsType: boxType<typeof unidadValues[number]>(), values: unidadValues},
     categoria: {tsType: boxType<typeof categoriaValues[number]>(), values: categoriaValues},
     estadoPedido: {tsType: boxType<typeof estadoPedidoValues[number]>(), values: estadoPedidoValues},
+    tipoMovimiento: {tsType: boxType<typeof tipoMovimientoValues[number]>(), values: tipoMovimientoValues},
     // Local date and time, as written by <input type="datetime-local">: YYYY-MM-DDTHH:MM, optionally :SS.
     fechaHora: {...commonTypeDefs.text},
     password: {...commonTypeDefs.text, minLength: 12, maxLength: 128},
@@ -85,6 +88,7 @@ export const appTypeBehaviours = {
     unidad: enumBehaviour(appTypeDefs.unidad.values, 'unidad'),
     categoria: enumBehaviour(appTypeDefs.categoria.values, 'categoria'),
     estadoPedido: enumBehaviour(appTypeDefs.estadoPedido.values, 'estadoPedido'),
+    tipoMovimiento: enumBehaviour(appTypeDefs.tipoMovimiento.values, 'tipoMovimiento'),
     fechaHora: fechaHoraBehaviour,
     password: passwordBehaviour,
 } satisfies TypeProvider<typeof appTypeDefs>;
@@ -106,6 +110,7 @@ export const inputConstraints = {
     unidad: {minLength: null, maxLength: null, options: appTypeDefs.unidad.values},
     categoria: {minLength: null, maxLength: null, options: appTypeDefs.categoria.values},
     estadoPedido: {minLength: null, maxLength: null, options: appTypeDefs.estadoPedido.values},
+    tipoMovimiento: {minLength: null, maxLength: null, options: appTypeDefs.tipoMovimiento.values},
     fechaHora: {minLength: null, maxLength: null},
     password: {minLength: appTypeDefs.password.minLength, maxLength: appTypeDefs.password.maxLength},
 } satisfies Record<keyof typeof appTypeDefs, InputConstraints>;

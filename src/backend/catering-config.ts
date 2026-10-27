@@ -4,4 +4,6 @@ export const cateringConfig = {
     anticipacionDias: 3,
     // Upper bound for dishes in one à la carte order.
     maxPlatosPorPedido: 50,
+    // Upper bound for dishes or ingredients in one stock movement.
+    maxLineasPorMovimiento: 100,
 };

@@ -1,4 +1,4 @@
-import type {EntityCreate, EntityKey, EntityName, EntityResponse, EntityUpdate, DeleteDependencyCheck, EntityQuery} from '../backend/browser-contract.js';
+import type {EntityCreate, EntityKey, EntityName, EntityNamesResponse, EntityResponse, EntityUpdate, DeleteDependencyCheck, EntityQuery} from '../backend/browser-contract.js';
 import {ApiRequestError, checkDeleteDependencies, createRow, deleteRows, isAuthenticated, listEntities, updateRow, watchEntities} from './api.js';
 import {createEntityCache} from './entity-cache.js';
 import {entityPage} from './entity-query.js';
@@ -6,8 +6,7 @@ import {editColumnFilters} from './column-filters.js';
 import {element} from './dom.js';
 import {actionButton, setActionLabel} from './action-button.js';
 import {createTableNavigation} from './table-navigation.js';
-import {reviewRow} from './review-row.js';
-import {pedidoPlatos} from './pedido-platos.js';
+import {abrirDetalle} from './detalle-hijos.js';
 import {initializeAuthentication} from './auth-ui.js';
 import {loadReferenceSources, type LoadedReferenceSource} from './reference-sources.js';
 import {confirmAction, showDeleteDependencies} from './confirm.js';
@@ -15,11 +14,14 @@ import {scrollCue, updateScrollCues} from './sheet-scroll.js';
 import {createRowEditor, type RowEditor, type Row, type Value} from './row-editor.js';
 import {comprasView} from './compras.js';
 import {estadisticasView} from './estadisticas.js';
+import {inventarioView} from './inventario.js';
+import {exportarPlanilla, exportarVarias} from './exportar.js';
 
 // Catering views listed after the spreadsheets in the drawer.
-const cateringViews = [comprasView, estadisticasView];
+const cateringViews = [inventarioView, comprasView, estadisticasView];
 
 let labels: Readonly<Record<string, string>> = {};
+let catalogEntries: EntityNamesResponse = [];
 
 const workspace = document.querySelector<HTMLFieldSetElement>('#workspace')!;
 const content = document.querySelector<HTMLElement>('#content')!;
@@ -96,7 +98,7 @@ async function show(name: EntityName): Promise<void> {
     const view = cateringViews.find(candidate => candidate.name === name);
     if (view) {
         canLeaveView = async () => true;
-        const invalidate = await view.show(content);
+        const invalidate = await view.show(content, other => void run(() => selectTab(other)));
         if (generation === viewGeneration) invalidateView = invalidate;
         return;
     }
@@ -177,12 +179,16 @@ async function show(name: EntityName): Promise<void> {
     deleteSelectedButton.disabled = true;
     const columnFilters = actionButton('Filtrar por columnas', 'filter', () =>
         editColumnFilters(entity, where, selected => changeQuery({...query(), where: selected, page: 1})));
-    toolbar.append(filterInput, columnFilters, deleteSelectedButton);
+    toolbar.append(filterInput, columnFilters, ...entity.readOnly ? [] : [deleteSelectedButton]);
     toolbar.append(actionButton('Actualizar', 'refresh', () => { void run(async () => {
         if (dirty() && !await confirmAction({title: 'Descartar borrador', message: 'Actualizar descartará los cambios sin guardar. ¿Continuar?', confirmText: 'Descartar y actualizar', danger: true})) return;
         await refresh();
     }); }));
-    toolbar.append(actionButton('Agregar fila', 'add', () => { adding ??= createRowEditor(entity, sources); render(); }, 'primary'));
+    toolbar.append(actionButton('Exportar a Excel', 'download', () => void run(async () => {
+        await exportarPlanilla(name, query());
+        status.textContent = 'Planilla exportada.';
+    })));
+    if (!entity.readOnly) toolbar.append(actionButton('Agregar fila', 'add', () => { adding ??= createRowEditor(entity, sources); render(); }, 'primary'));
 
     async function refresh(): Promise<void> {
         const revision = ++queryRevision;
@@ -457,13 +463,9 @@ async function show(name: EntityName): Promise<void> {
 
             const actions = tr.insertCell();
             actions.className = 'row-actions';
-            actions.append(actionButton('Ver datos actuales', 'review', () => void run(async () => {
-                cache.invalidate(name);
-                const query = {where: rowKey(entity, row)} as EntityQuery;
-                const current = entityPage(await load(name, query), query).rows[0];
-                reviewRow(entity, row, editors.get(row)!.read(), current, ...name === 'pedidos' ? [await pedidoPlatos(row)] : []);
-            })));
+            if (entity.children.length) actions.append(actionButton('Detalle', 'detail', () => void run(() => abrirDetalle(entity, row))));
         });
+        if (entity.readOnly) for (const field of tbody.querySelectorAll<HTMLInputElement | HTMLSelectElement>('.field input, .field select')) field.disabled = true;
         for (const row of table.rows) {
             const pinned = [...row.cells].find(cell => cell.dataset['column'] === pinnedColumn);
             if (pinned) {
@@ -491,6 +493,8 @@ async function show(name: EntityName): Promise<void> {
     content.replaceChildren(controls, scroll);
 }
 
+document.querySelector<HTMLButtonElement>('#export-tables')!.onclick = () => void run(() => exportarVarias(catalogEntries));
+
 initializeAuthentication(active => {
     workspace.hidden = !active;
     if (!active) {
@@ -510,7 +514,8 @@ initializeAuthentication(active => {
         if (!isAuthenticated()) return;
         allEntities = catalog.map(entity => entity.name);
         labels = Object.fromEntries(catalog.map(entity => [entity.name, entity.label]));
-        navigation.catalog([...catalog, ...cateringViews.map(({name, label}) => ({name, label}))]);
+        catalogEntries = catalog;
+        navigation.catalog([...catalog, ...cateringViews.map(({name, label, area}) => ({name, label, area}))]);
         if (allEntities[0]) await selectTab(allEntities[0]);
         else content.textContent = 'No hay planillas disponibles.';
         stopWatching = watchEntities(name => { cache.invalidate(name); invalidateView(name); });

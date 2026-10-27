@@ -42,6 +42,7 @@ const editors = {
     unidad: enumEditor,
     categoria: enumEditor,
     estadoPedido: enumEditor,
+    tipoMovimiento: enumEditor,
     fechaHora: (_constraints) => {
         const input = element('input');
         input.type = 'datetime-local';

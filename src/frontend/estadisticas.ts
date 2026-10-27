@@ -26,7 +26,8 @@ async function render(view: HTMLElement): Promise<void> {
         tarjeta('Ticket promedio', vendidos ? pesos(Math.round(facturacion / vendidos)) : '—'),
         tarjeta('Personas', personas.toLocaleString('es-AR')),
     );
-    const nota = element('p', 'Facturación y personas cuentan los pedidos confirmados y entregados, por mes del evento.');
+    const nota = element('p', 'Facturación y personas cuentan los pedidos confirmados y entregados, por mes del evento. ' +
+        'Un pedido entregado cuenta lo facturado en su egreso, si se cargó.');
     nota.className = 'muted';
     view.replaceChildren(element('h2', 'Estadísticas'), tarjetas, nota,
         seccion('Pedidos por estado', tabla(['Estado', 'Pedidos'], datos.porEstado.map(e => [e.estado, e.pedidos]))),
@@ -42,8 +43,8 @@ async function show(content: HTMLElement): Promise<(changed: string | null) => v
     await render(view);
     content.replaceChildren(view);
     return changed => {
-        if (changed === null || changed === 'pedidos' || changed === 'pedido_platos' || changed === 'platos') void render(view).catch(() => {});
+        if (changed === null || changed === 'pedidos' || changed === 'pedido_platos' || changed === 'platos' || changed === 'movimientos') void render(view).catch(() => {});
     };
 }
 
-export const estadisticasView: CateringView = {name: 'estadisticas', label: 'Estadísticas', show};
+export const estadisticasView: CateringView = {name: 'estadisticas', label: 'Estadísticas', area: 'Análisis', show};
