@@ -45,6 +45,11 @@
       "systemId": "ssot2026",
       "releaseId": "0008_receta_cantidad_decimal",
       "releaseHash": "b4867fad172f86ca1de2b9f186f496887940bf21c2dd4b3aed43cde4ae9ebe7b"
+    },
+    {
+      "systemId": "ssot2026",
+      "releaseId": "0009_update_schema",
+      "releaseHash": "c7dbb14df35f8711f19d51eab9b974215b3196384be920b9a02f226f0389fc47"
     }
   ],
   "migrations": [
@@ -1275,6 +1280,305 @@
         "after": []
       },
       "migrationHash": "5c2fc1044b6b0370663b5f0481ca3b41b4bdb1f419670757dc745c8c2dd7f362"
+    },
+    {
+      "migration": {
+        "id": "0009_update_schema",
+        "from": {
+          "systemId": "ssot2026",
+          "releaseId": "0008_receta_cantidad_decimal",
+          "releaseHash": "b4867fad172f86ca1de2b9f186f496887940bf21c2dd4b3aed43cde4ae9ebe7b"
+        },
+        "to": {
+          "systemId": "ssot2026",
+          "releaseId": "0009_update_schema",
+          "releaseHash": "c7dbb14df35f8711f19d51eab9b974215b3196384be920b9a02f226f0389fc47"
+        },
+        "description": "",
+        "before": [
+          {
+            "name": "0009_ingredientes_unidad_compra_nueva.sql",
+            "kind": "check",
+            "contentHash": "d2000db23cea427650d10fada0f1d3e8a51c97d4916e0c3621132d2c04ae105c"
+          }
+        ],
+        "steps": [
+          {
+            "id": "001_add_table_movimiento_ingredientes",
+            "run": {
+              "name": "001_add_table_movimiento_ingredientes.sql",
+              "kind": "sql",
+              "contentHash": "63f9c1743d26f97a11129dea015e477bdf5ec6dd940f796e82c32bc020564c55"
+            }
+          },
+          {
+            "id": "002_add_table_unidades",
+            "run": {
+              "name": "002_add_table_unidades.sql",
+              "kind": "sql",
+              "contentHash": "a5b0c4ec2c4e2401020b76b79c06151fad7d16f7428af530efb10a0a0baaaea4"
+            }
+          },
+          {
+            "id": "003_add_table_movimientos",
+            "run": {
+              "name": "003_add_table_movimientos.sql",
+              "kind": "sql",
+              "contentHash": "4c0403b8088a6150b1e8a365590780e6cdbc62262d09e84641c07fe99a778f93"
+            }
+          },
+          {
+            "id": "004_add_table_movimiento_platos",
+            "run": {
+              "name": "004_add_table_movimiento_platos.sql",
+              "kind": "sql",
+              "contentHash": "042e085dca065ba302801f84e0c1ede6161254d4588bcc74fc41f4e737f3c157"
+            }
+          },
+          {
+            "id": "005_add_column_movimientos_tipo",
+            "run": {
+              "name": "005_add_column_movimientos_tipo.sql",
+              "kind": "sql",
+              "contentHash": "f5207c346953ad0783c3fdcdbcf85335dff001126786b4f1023156d489f1e517"
+            }
+          },
+          {
+            "id": "006_add_column_movimiento_platos_movimiento",
+            "run": {
+              "name": "006_add_column_movimiento_platos_movimiento.sql",
+              "kind": "sql",
+              "contentHash": "49a828e57819eee9aa55d7aa5112cb92f34701145f47c7d8ad38694e0727601f"
+            }
+          },
+          {
+            "id": "007_add_column_movimiento_platos_porciones",
+            "run": {
+              "name": "007_add_column_movimiento_platos_porciones.sql",
+              "kind": "sql",
+              "contentHash": "db8323d1c85c29ad3530d2ffc29d8636c0acee7ffda4ab4d603005d1ce915bee"
+            }
+          },
+          {
+            "id": "008_add_column_movimientos_id",
+            "run": {
+              "name": "008_add_column_movimientos_id.sql",
+              "kind": "sql",
+              "contentHash": "f94f7d33f037e93a394f63d6c2bbfc927a377220f77db779cc950d7cf0cc6ac9"
+            }
+          },
+          {
+            "id": "009_add_column_unidades_factor",
+            "run": {
+              "name": "009_add_column_unidades_factor.sql",
+              "kind": "sql",
+              "contentHash": "626ecfa563b820d84d8abfd8401ca9cc9844137a11b529a8176c027e409bfe6b"
+            }
+          },
+          {
+            "id": "010_add_column_movimiento_platos_cod_plato",
+            "run": {
+              "name": "010_add_column_movimiento_platos_cod_plato.sql",
+              "kind": "sql",
+              "contentHash": "7d842550b0a2dd69a1196536f4d4b115e61eb22b12ad40a7acd5364c9093ee0b"
+            }
+          },
+          {
+            "id": "011_add_column_unidades_nombre",
+            "run": {
+              "name": "011_add_column_unidades_nombre.sql",
+              "kind": "sql",
+              "contentHash": "78e3eddb00eb473339a8ad7a2ccb2565566947f874f672a5e56026ea00c89ed9"
+            }
+          },
+          {
+            "id": "012_add_column_movimiento_ingredientes_cod_ing",
+            "run": {
+              "name": "012_add_column_movimiento_ingredientes_cod_ing.sql",
+              "kind": "sql",
+              "contentHash": "2ee1602c238ff3a321c69e339b8c744581a83dc047f9a1fdb1d8a2c7765fb7b2"
+            }
+          },
+          {
+            "id": "013_add_column_movimientos_anula",
+            "run": {
+              "name": "013_add_column_movimientos_anula.sql",
+              "kind": "sql",
+              "contentHash": "c2a4ecbb16ca4577ade1cf0d8cbdcce73db486dcbd9f55f0f56550e6a6f17cc4"
+            }
+          },
+          {
+            "id": "014_add_column_unidades_cod_unidad",
+            "run": {
+              "name": "014_add_column_unidades_cod_unidad.sql",
+              "kind": "sql",
+              "contentHash": "97537bf1bf73c0b5a035383a83850617c20fa13f6f459384699396afaaa3247f"
+            }
+          },
+          {
+            "id": "015_add_column_movimiento_ingredientes_cantidad",
+            "run": {
+              "name": "015_add_column_movimiento_ingredientes_cantidad.sql",
+              "kind": "sql",
+              "contentHash": "58acd22180417f7e4169420f91b12b12ab7f95d4bf5508f2877bcc9cdfcf3ba7"
+            }
+          },
+          {
+            "id": "016_add_column_movimientos_fecha",
+            "run": {
+              "name": "016_add_column_movimientos_fecha.sql",
+              "kind": "sql",
+              "contentHash": "840daae8f49e82fbca28de07de73fb9320497b748998edd4cf4c44af626827dd"
+            }
+          },
+          {
+            "id": "017_add_column_ingredientes_unidad_compra",
+            "run": {
+              "name": "017_add_column_ingredientes_unidad_compra.sql",
+              "kind": "sql",
+              "contentHash": "1f2a177f796d52840617adaea59737908634d507c320bd8e82347bcd2ea28cc5"
+            }
+          },
+          {
+            "id": "018_add_column_movimientos_facturado",
+            "run": {
+              "name": "018_add_column_movimientos_facturado.sql",
+              "kind": "sql",
+              "contentHash": "7c49ca504d7a985a63b75089143befe48265d2ebcab6dd4be8081dbf5bb2cee1"
+            }
+          },
+          {
+            "id": "019_add_column_movimientos_pedido",
+            "run": {
+              "name": "019_add_column_movimientos_pedido.sql",
+              "kind": "sql",
+              "contentHash": "02b6b7f699900fdfdadf65aaf93eb7d4fae3425d13d9bb5aeaa98cbef1d43fb5"
+            }
+          },
+          {
+            "id": "020_add_column_movimientos_observaciones",
+            "run": {
+              "name": "020_add_column_movimientos_observaciones.sql",
+              "kind": "sql",
+              "contentHash": "8d814ead0738870f51acb62d55010fee568c1e378fc31875701fd3c4f8d3f3c3"
+            }
+          },
+          {
+            "id": "021_add_column_unidades_base",
+            "run": {
+              "name": "021_add_column_unidades_base.sql",
+              "kind": "sql",
+              "contentHash": "2d99bb51eb1f983b80ba89547ec4f9090d82274fe68549ee931490018a6874f3"
+            }
+          },
+          {
+            "id": "022_add_column_movimiento_ingredientes_movimiento",
+            "run": {
+              "name": "022_add_column_movimiento_ingredientes_movimiento.sql",
+              "kind": "sql",
+              "contentHash": "aae1dd7bc3c4df1082c77d207add1e2e0a40b9121e9946ffcdae5016e0e37f10"
+            }
+          },
+          {
+            "id": "023_add_constraint_movimientos_movimientos_pkey",
+            "run": {
+              "name": "023_add_constraint_movimientos_movimientos_pkey.sql",
+              "kind": "sql",
+              "contentHash": "15ca4e930db34225870a95ff41c690fc6491bafe11fb344b942b4ce42e3ba2d0"
+            }
+          },
+          {
+            "id": "024_add_constraint_movimiento_ingredientes_movimiento_ingredientes_pkey",
+            "run": {
+              "name": "024_add_constraint_movimiento_ingredientes_movimiento_ingredientes_pkey.sql",
+              "kind": "sql",
+              "contentHash": "34ab83baf8d6f35ecd57cfed858e60f39e7bd03d2e4e3cc47cd2c75ea815e75c"
+            }
+          },
+          {
+            "id": "025_add_constraint_unidades_unidades_pkey",
+            "run": {
+              "name": "025_add_constraint_unidades_unidades_pkey.sql",
+              "kind": "sql",
+              "contentHash": "075e6f122683931cbaacb5cde2bd5382b8008fb14236c87991678784d1d94d42"
+            }
+          },
+          {
+            "id": "026_add_constraint_movimiento_platos_movimiento_platos_pkey",
+            "run": {
+              "name": "026_add_constraint_movimiento_platos_movimiento_platos_pkey.sql",
+              "kind": "sql",
+              "contentHash": "c96edfeb72bbaa9239b50423e4981da3464278192281c70cf1be587702e19c76"
+            }
+          },
+          {
+            "id": "027_add_constraint_movimientos_movimientos_pedido_fkey",
+            "run": {
+              "name": "027_add_constraint_movimientos_movimientos_pedido_fkey.sql",
+              "kind": "sql",
+              "contentHash": "293dcd44c5b3f3c5c9c45ff62d323ccb20071bf9b668abecbbccc4978aba1633"
+            }
+          },
+          {
+            "id": "028_add_constraint_movimiento_platos_movimiento_platos_movimiento_fkey",
+            "run": {
+              "name": "028_add_constraint_movimiento_platos_movimiento_platos_movimiento_fkey.sql",
+              "kind": "sql",
+              "contentHash": "6de0485dc6081cde641eee43033f762933a06c93dd874335c3bae23e552ebb2a"
+            }
+          },
+          {
+            "id": "029_add_constraint_ingredientes_ingredientes_unidad_compra_fkey",
+            "run": {
+              "name": "029_add_constraint_ingredientes_ingredientes_unidad_compra_fkey.sql",
+              "kind": "sql",
+              "contentHash": "02a59058756a6825006544122170d22c8b8183af70db91a270faee31e1c6c4e4"
+            }
+          },
+          {
+            "id": "030_add_constraint_movimiento_ingredientes_movimiento_ingredientes_movimiento_fkey",
+            "run": {
+              "name": "030_add_constraint_movimiento_ingredientes_movimiento_ingredientes_movimiento_fkey.sql",
+              "kind": "sql",
+              "contentHash": "95accc9210ebd404827d1bf2f0afa1fec6a16c6f80f1b1215ab686fb101225cb"
+            }
+          },
+          {
+            "id": "031_add_constraint_movimiento_platos_movimiento_platos_plato_fkey",
+            "run": {
+              "name": "031_add_constraint_movimiento_platos_movimiento_platos_plato_fkey.sql",
+              "kind": "sql",
+              "contentHash": "6c8ec49cec37c355b78b41a99013cc09e8f86c7ef78b7f8d5f606cfc70c73d02"
+            }
+          },
+          {
+            "id": "032_add_constraint_movimiento_ingredientes_movimiento_ingredientes_ingrediente_fkey",
+            "run": {
+              "name": "032_add_constraint_movimiento_ingredientes_movimiento_ingredientes_ingrediente_fkey.sql",
+              "kind": "sql",
+              "contentHash": "f3512648f8129088acc1a58fee0c492e2ad106dbc188791b8f02797e2ee06eb4"
+            }
+          },
+          {
+            "id": "033_add_constraint_movimientos_movimientos_anula_fkey",
+            "run": {
+              "name": "033_add_constraint_movimientos_movimientos_anula_fkey.sql",
+              "kind": "sql",
+              "contentHash": "f0caa7526f32efcf026bc29d2107b5d9f088b97ed658ad99f8a63e8f604aa225"
+            }
+          },
+          {
+            "id": "app-permissions",
+            "run": {
+              "name": "app-permissions.sql",
+              "kind": "sql",
+              "contentHash": "23f4878ced85a9dfb5fc064ad1ef76bf9931a42bdf60ed82c06428ff5ce9899e"
+            }
+          }
+        ],
+        "after": []
+      },
+      "migrationHash": "12be11a62f37044ceb36aaf670c188c0021132c23ee24690efe795d1ea035f83"
     }
   ]
 }

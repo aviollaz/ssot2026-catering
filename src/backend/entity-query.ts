@@ -22,10 +22,8 @@ export function readQuery(value: unknown, fields: Fields): EntityQuery {
     return {filter: filter.trim(), ...(sort === undefined ? {} : {sort}), direction, page: Number(page), where: equal} as EntityQuery;
 }
 
-// Counts, rows and versions come from one PostgreSQL statement/snapshot.
-export async function queryEntity(pool: Pick<Pool, 'query'>, name: string, fields: Fields, pk: readonly string[], query: EntityQuery) {
-    const values: unknown[] = [];
-    const parameter = (value: unknown) => { values.push(value); return `$${values.length}`; };
+// The filter and sort of a query as SQL, with values as parameters; shared by browsing and exports.
+export function querySql(fields: Fields, pk: readonly string[], query: EntityQuery, parameter: (value: unknown) => string) {
     const names = Object.keys(fields);
     const predicates = Object.entries(query.where ?? {}).map(([field, value]) => `${quote(field)} IS NOT DISTINCT FROM ${parameter(value)}`);
     if (query.filter) {
@@ -35,6 +33,15 @@ export async function queryEntity(pool: Pick<Pool, 'query'>, name: string, field
     const order = [...new Set([...(query.sort ? [query.sort] : []), ...pk])].map(field => {
         return `${quote(field)}${sqlMapping[fields[field]!.type] === 'text' ? ' COLLATE "C"' : ''} ${field === query.sort ? query.direction ?? 'asc' : 'asc'} NULLS LAST`;
     }).join(', ');
+    return {predicates, order};
+}
+
+// Counts, rows and versions come from one PostgreSQL statement/snapshot.
+export async function queryEntity(pool: Pick<Pool, 'query'>, name: string, fields: Fields, pk: readonly string[], query: EntityQuery) {
+    const values: unknown[] = [];
+    const parameter = (value: unknown) => { values.push(value); return `$${values.length}`; };
+    const names = Object.keys(fields);
+    const {predicates, order} = querySql(fields, pk, query, parameter);
     const page = parameter(query.page ?? 1);
     const result = await pool.query<{rows: Record<string, unknown>[]; versions: string[]; total: number; matched: number; page: number}>(
         `WITH stats AS (SELECT count(*)::int AS total, count(*) FILTER (WHERE ${predicates.join(' AND ') || 'TRUE'})::int AS matched FROM ${entityTable(name)}), ` +

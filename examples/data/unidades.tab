@@ -1,0 +1,8 @@
+cod_unidad|nombre|base|factor
+kg|Kilo|g|1000
+bolsa25|Bolsa de 25 kg|g|25000
+pan500|Pan de 500 g|g|500
+l|Litro|ml|1000
+bidon6|Bidón de 6 l|ml|6000
+doc|Docena|u|12
+maple|Maple (30 u)|u|30

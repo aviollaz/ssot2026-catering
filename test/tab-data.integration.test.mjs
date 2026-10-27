@@ -8,9 +8,9 @@ import {loadTabData} from '../dist/backend/tab-data.js';
 
 test('tab-plus imports use SSOT types, FK order and atomic app-user writes', async () => {
     await withTestDatabase(async ({pool}) => {
-        assert.equal(await loadTabData(pool, 'examples/data'), 52);
+        assert.equal(await loadTabData(pool, 'examples/data'), 59);
         assert.deepEqual((await pool.query("SELECT activo, descripcion IS NOT NULL AS descrito FROM ssot.platos WHERE cod_plato='RAV'")).rows, [{activo: false, descrito: true}]);
-        assert.deepEqual((await pool.query("SELECT unidad, stock_actual FROM ssot.ingredientes WHERE cod_ing='HUE'")).rows, [{unidad: 'u', stock_actual: 30}]);
+        assert.deepEqual((await pool.query("SELECT unidad, stock_actual, unidad_compra FROM ssot.ingredientes WHERE cod_ing='HUE'")).rows, [{unidad: 'u', stock_actual: 30, unidad_compra: 'maple'}]);
         const before = (await pool.query('SELECT * FROM ssot.servicios ORDER BY cod_servicio')).rows;
         await assert.rejects(loadTabData(pool, 'examples/data'), {code: '23505'});
         assert.deepEqual((await pool.query('SELECT * FROM ssot.servicios ORDER BY cod_servicio')).rows, before);
