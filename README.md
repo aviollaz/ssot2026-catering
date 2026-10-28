@@ -132,6 +132,23 @@ Para probar el flujo completo:
 - **"No existe usuario con esas credenciales"**: el usuario inicial se crea solo con
   la base vacía. Si cambiaste el `.env` después, usá el usuario anterior o borrá la
   base con `docker compose down -v`.
+- **Las migraciones fallan con "SSOT changed since this draft was created"**: quedó un
+  borrador viejo en `migrations/` (`draft.json` y `draft.json.states.json`), de una
+  corrida anterior que no terminó, por ejemplo con una imagen sin reconstruir después de
+  un `git pull`. La carpeta se monta en el contenedor, así que el borrador sobrevive al
+  rebuild y no coincide con la SSOT nueva. Borralo, revisá que `git status migrations`
+  no muestre otras migraciones nuevas sin commitear (si las hay, borralas también) y
+  repetí el paso 4:
+
+  ```sh
+  rm -f migrations/draft.json migrations/draft.json.states.json
+  git status migrations
+  docker compose build
+  docker compose run --rm migrations
+  ```
+
+  Si una de esas migraciones locales llegó a aplicarse, el siguiente intento falla por la
+  historia de la base: borrala con `docker compose down -v` y repetí los pasos 4 y 5.
 
 ## Mantenerse al día con la clase
 
