@@ -45,6 +45,7 @@ test('migration artifacts retain valid hashes and grant CRUD only when their tab
         '0006_update_schema': [],
         '0007_update_schema': ['ingredientes', 'pedido_platos', 'pedidos', 'platos', 'recetas', 'servicio_platos', 'servicios'],
         '0008_receta_cantidad_decimal': [],
+        '0009_update_schema': ['movimiento_ingredientes', 'movimiento_platos', 'movimientos', 'unidades'],
     };
     for (let index = 0; index < catalog.releases.length; index++) value(await readCatalogState(root, catalog, index));
     for (const published of catalog.migrations) {

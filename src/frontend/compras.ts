@@ -1,17 +1,34 @@
-import type {ComprasResponse, EntregaResponse, PedidoPendiente} from '../backend/catering-contract.js';
+import type {CompraIngrediente, ComprasResponse, PedidoPendiente, Unidad} from '../backend/catering-contract.js';
 import {cateringRequest} from './api.js';
-import {confirmAction} from './confirm.js';
+import {egresoDePedido} from './inventario.js';
 import {element} from './dom.js';
-import {fechaHora, seccion, tabla, type CateringView} from './catering-ui.js';
+import {fechaHora, numero, seccion, selectorUnidad, tabla, type CateringView} from './catering-ui.js';
 
-const relevantes = [null, 'pedidos', 'pedido_platos', 'platos', 'recetas', 'ingredientes'];
+const relevantes = [null, 'pedidos', 'pedido_platos', 'platos', 'recetas', 'ingredientes', 'unidades'];
 
-function tablaCompras({ingredientes}: ComprasResponse, necesidad: string, vacio: string): HTMLElement {
-    return tabla(['Ingrediente', 'Unidad', 'Stock', necesidad, 'Usan pedidos anteriores', 'Falta en total', 'A comprar'],
-        ingredientes.map(i => [i.nombre, i.unidad, i.stock, i.necesidad, i.consumo_previo, i.faltante, i.comprar]), vacio);
+/* The quantities come in the base unit. With other units of the same base, the row gets a selector,
+   starting at the ingredient's purchase unit; "A comprar" is then rounded up to whole units. */
+function filaCompras(i: CompraIngrediente, unidades: readonly Unidad[]): (string | number | Node)[] {
+    const {select, factor} = selectorUnidad(i.unidad, unidades, i.unidad_compra);
+    const valores = [i.stock, i.necesidad, i.consumo_previo, i.faltante];
+    if (select.options.length === 1) return [i.nombre, i.unidad, ...valores, i.comprar];
+    select.setAttribute('aria-label', `Unidad de ${i.nombre}`);
+    const celdas = [...valores, i.comprar].map(() => document.createTextNode(''));
+    const mostrar = () => {
+        valores.forEach((valor, index) => { celdas[index]!.textContent = numero(valor / factor()); });
+        celdas[4]!.textContent = factor() === 1 ? numero(i.comprar) : `${numero(Math.ceil(i.comprar / factor()))} (${numero(i.comprar)} ${i.unidad})`;
+    };
+    select.onchange = mostrar;
+    mostrar();
+    return [i.nombre, select, ...celdas];
 }
 
-async function show(content: HTMLElement): Promise<(changed: string | null) => void> {
+function tablaCompras({ingredientes, unidades}: ComprasResponse, necesidad: string, vacio: string): HTMLElement {
+    return tabla(['Ingrediente', 'Unidad', 'Stock', necesidad, 'Usan pedidos anteriores', 'Falta en total', 'A comprar'],
+        ingredientes.map(i => filaCompras(i, unidades)), vacio);
+}
+
+async function show(content: HTMLElement, abrir: (name: string) => void): Promise<(changed: string | null) => void> {
     const status = element('p');
     status.className = 'catering-status';
     status.setAttribute('role', 'status');
@@ -19,7 +36,8 @@ async function show(content: HTMLElement): Promise<(changed: string | null) => v
     // By order: confirmed and pending orders (a pending one is a preview as if it were confirmed).
     const pedido = element('select');
     pedido.setAttribute('aria-label', 'Pedido');
-    const entregar = element('button', 'Marcar entregado');
+    // Delivering is an Egreso with the dishes actually made, loaded in Inventario.
+    const entregar = element('button', 'Registrar egreso');
     entregar.type = 'button';
     entregar.className = 'primary';
     const resultadoPedido = element('div');
@@ -87,17 +105,10 @@ async function show(content: HTMLElement): Promise<(changed: string | null) => v
 
     pedido.onchange = () => { status.textContent = ''; void intentar(mostrarPedido); };
     periodo.onsubmit = event => { event.preventDefault(); void intentar(mostrarPeriodo); };
-    entregar.onclick = () => void intentar(async () => {
-        const actual = pedidos.find(p => p.id === pedido.value);
-        if (!actual || !await confirmAction({title: 'Marcar entregado',
-            message: `¿Marcar como entregado el pedido de ${actual.cliente_nombre}? Se descontará su consumo del stock.`,
-            confirmText: 'Marcar entregado', danger: false})) return;
-        const {consumo}: EntregaResponse = await cateringRequest(`/pedidos/${encodeURIComponent(actual.id)}/entregar`, 'POST');
-        status.className = 'catering-status';
-        status.textContent = `Pedido entregado. Se descontaron ${consumo.length} ingredientes del stock.`;
-        await cargarPedidos();
-        if (resultadoPeriodo.firstChild) await mostrarPeriodo();
-    });
+    entregar.onclick = () => {
+        egresoDePedido(pedido.value);
+        abrir('inventario');
+    };
 
     await cargarPedidos();
     await mostrarPeriodo();
@@ -106,4 +117,4 @@ async function show(content: HTMLElement): Promise<(changed: string | null) => v
     };
 }
 
-export const comprasView: CateringView = {name: 'compras', label: 'Compras', show};
+export const comprasView: CateringView = {name: 'compras', label: 'Compras', area: 'Inventario', show};

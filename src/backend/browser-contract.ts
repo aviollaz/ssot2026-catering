@@ -10,7 +10,7 @@ export type EntityKey = Record<string, NonNullable<FieldValue>>;
 export type EntityCreate = EntityRow;
 export type EntityInput = EntityRow;
 export type EntityUpdate = {key: EntityKey; row: EntityInput; version: string};
-export type EntityNamesResponse = {name: EntityName; label: string}[];
+export type EntityNamesResponse = {name: EntityName; label: string; area: string}[];
 export type EntityQuery = {
     filter?: string; sort?: string; direction?: 'asc' | 'desc'; page?: number;
     where?: Readonly<Partial<EntityRow>>;
@@ -23,6 +23,10 @@ export type EntityResponse = {
     name: EntityName;
     label: string;
     browsing: {clientRows: number; pageSize: number; bulkDeleteLimit: number};
+    // Written only by the app's own endpoints; the sheet shows it without editing.
+    readOnly: boolean;
+    // Child tables shown and edited in a row's Detalle (entityDetails in the SSOT).
+    children: EntityName[];
     pk: readonly string[];
     columns: EntityColumn[];
     inputs: EntityInputColumn[];

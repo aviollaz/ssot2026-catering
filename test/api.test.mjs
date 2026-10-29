@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import express from 'express';
 import {registerEntityApi} from '../dist/backend/api.js';
-import {myEntities, entityLabels} from '../dist/backend/system.js';
+import {myEntities, entityAreas, entityLabels} from '../dist/backend/system.js';
 import {browsing} from '../dist/backend/browsing.js';
 import {entityResult} from './helpers/entity-result.mjs';
 import {createAuthentication} from '../dist/backend/auth.js';
@@ -32,7 +32,7 @@ test('entity discovery comes from the SSOT and needs no database query', async t
     const base = await startApi(t, () => { throw new Error('Unexpected database query'); });
     const response = await fetch(`${base}/api/entities`);
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), Object.keys(myEntities).map(name => ({name, label: entityLabels[name]})));
+    assert.deepEqual(await response.json(), Object.keys(myEntities).map(name => ({name, label: entityLabels[name], area: entityAreas[name]})));
     for (const name of ['unknown', 'constructor', 'platos;DROP TABLE ssot.platos']) {
         const invalid = await fetch(`${base}/api/entities/${encodeURIComponent(name)}`);
         assert.equal(invalid.status, 404);
@@ -54,7 +54,7 @@ test('entity data preserves JSON value types and exposes only display metadata',
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), {
         name: 'recetas',
-        label: 'Recetas', browsing, window: {kind: 'complete'}, versions: ['1'],
+        label: 'Recetas', browsing, readOnly: false, children: [], window: {kind: 'complete'}, versions: ['1'],
         pk: ['cod_plato', 'cod_ing'],
         columns: [
             {name: 'cod_plato', label: 'Plato', type: 'text', nullable: false, writable: true, constraints: text},
@@ -84,7 +84,7 @@ test('empty entities still return their columns', async t => {
     const body = await response.json();
     assert.equal(body.name, 'ingredientes');
     assert.deepEqual(body.rows, []);
-    assert.deepEqual(body.columns.map(column => column.name), ['cod_ing', 'nombre', 'unidad', 'stock_actual']);
+    assert.deepEqual(body.columns.map(column => column.name), ['cod_ing', 'nombre', 'unidad', 'stock_actual', 'unidad_compra']);
     assert.equal(body.columns[3].type, 'cantidad');
 });
 
@@ -202,14 +202,14 @@ test('valid enums, positive boundary and nullable description retain their value
 test('CRUD uses parameters and targets the original key when the key is edited', async t => {
     const queries = [];
     const base = await startApi(t, async (sql, values) => { queries.push({sql, values}); return {rowCount: 1}; });
-    const row = {cod_ing: '', nombre: "O'Reilly <script>", unidad: 'g', stock_actual: 0};
+    const row = {cod_ing: '', nombre: "O'Reilly <script>", unidad: 'g', stock_actual: 0, unidad_compra: null};
     assert.equal((await send(base, 'ingredientes', 'POST', row)).status, 204);
     assert.match(queries[0].sql, /^INSERT INTO "ssot"\."ingredientes"/);
-    assert.deepEqual(queries[0].values, ['', row.nombre, 'g', 0]);
+    assert.deepEqual(queries[0].values, ['', row.nombre, 'g', 0, null]);
     assert.ok(!queries[0].sql.includes(row.nombre));
     assert.equal((await send(base, 'ingredientes', 'PUT', {key: {cod_ing: ''}, version: '1', row: {...row, cod_ing: 'RENAMED', nombre: 'Renamed', stock_actual: 5}})).status, 204);
-    assert.match(queries[1].sql, /WHERE "cod_ing" = \$5 AND xmin::text = \$6$/);
-    assert.deepEqual(queries[1].values, ['RENAMED', 'Renamed', 'g', 5, '', '1']);
+    assert.match(queries[1].sql, /WHERE "cod_ing" = \$6 AND xmin::text = \$7$/);
+    assert.deepEqual(queries[1].values, ['RENAMED', 'Renamed', 'g', 5, null, '', '1']);
     assert.equal((await send(base, 'recetas', 'DELETE', {cod_plato: 'EMP', cod_ing: 'RENAMED'})).status, 204);
     assert.match(queries[2].sql, /^DELETE FROM "ssot"\."recetas" WHERE "cod_plato" = \$1 AND "cod_ing" = \$2$/);
     assert.deepEqual(queries[2].values, ['EMP', 'RENAMED']);
@@ -244,7 +244,7 @@ test('missing rows and constraint conflicts have useful, non-sensitive errors', 
         if (sql.startsWith('INSERT')) throw Object.assign(new Error('Internal query and credentials'), {code: '23505'});
         return {rowCount: 0};
     });
-    const row = {cod_ing: 'B', nombre: 'B', unidad: 'g', stock_actual: 0};
+    const row = {cod_ing: 'B', nombre: 'B', unidad: 'g', stock_actual: 0, unidad_compra: null};
     assert.equal((await send(base, 'ingredientes', 'PUT', {key: {cod_ing: 'A'}, version: '1', row})).status, 409);
     assert.equal((await send(base, 'ingredientes', 'DELETE', {cod_ing: 'A'})).status, 404);
     const conflict = await send(base, 'ingredientes', 'POST', row);

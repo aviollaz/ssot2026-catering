@@ -4,17 +4,27 @@ TP grupal sobre el repo de la clase: un gestor para empresas de catering (plan e
 [docs/plan-catering.md](docs/plan-catering.md)).
 
 - **Panel de la empresa** (`/`, con login): planillas generadas desde la SSOT para
-  ingredientes, platos, recetas, servicios y pedidos, más dos vistas propias en el
-  menú lateral: **Compras** (qué comprar para cada pedido o período, y "Marcar
-  entregado", que descuenta el stock) y **Estadísticas**.
+  ingredientes, unidades, platos, recetas, servicios, pedidos y movimientos de stock,
+  agrupadas por área en el menú ☰ (el área de cada planilla está en `entityAreas`, en
+  `src/backend/system.ts`). El **Detalle** de cada fila muestra y edita sus tablas hijas
+  (la receta de un plato, los platos de un servicio o de un pedido), deducidas de las FKs.
+  Cada planilla se puede **exportar a Excel**, y desde el menú, varias juntas. Tres vistas
+  propias:
+  - **Inventario**: registra ingresos, egresos (los platos que realmente se hicieron, con lo
+    facturado; si son de un pedido, lo pasan a Entregado), mermas y ajustes, con su historial
+    y anulación. Muestra también cuánto stock no explica el historial, porque el stock se
+    puede editar a mano.
+  - **Compras**: qué comprar para cada pedido o período, en la unidad que se elija.
+  - **Estadísticas**.
 - **Página para clientes** (`/pedido`, sin cuenta): elegir un menú armado o platos a
   la carta, fecha, personas y datos de contacto; devuelve un código para consultar
   el estado en `/pedido?codigo=…`.
 
 La lógica de negocio está en `src/backend/catering.ts` (API `/api/catering`, con
-sesión, y `/api/public`, sin sesión), y el frontend en `src/frontend/compras.ts`,
-`estadisticas.ts` y `pedido.ts`. `npm run test:catering` prueba el cálculo de
-compras, la entrega y la API pública contra una base aislada.
+sesión, y `/api/public`, sin sesión) y la exportación en `exportar.ts` y `xlsx.ts`;
+el frontend en `src/frontend/inventario.ts`, `compras.ts`, `estadisticas.ts`, `pedido.ts`
+y `detalle-hijos.ts`. `npm run test:catering` prueba el cálculo de compras, los
+movimientos de stock, la exportación y la API pública contra una base aislada.
 
 ## Cómo ejecutarlo, paso a paso (con Docker)
 
@@ -90,7 +100,7 @@ Si se corre de nuevo, falla por datos duplicados y no cambia nada.
 
 ### 6. Usarlo
 
-- Panel de la empresa: <http://localhost:3001/>. Las planillas, **Compras** y
+- Panel de la empresa: <http://localhost:3001/>. Las planillas, **Inventario**, **Compras** y
   **Estadísticas** están en el menú ☰.
 - Página para clientes: <http://localhost:3001/pedido>.
 
@@ -98,8 +108,10 @@ Para probar el flujo completo:
 
 1. Hacé un pedido desde `/pedido`. Aparece solo en la planilla **Pedidos**.
 2. Cambiale el estado a `Confirmado`.
-3. En **Compras**, elegí el pedido, mirá qué hay que comprar y tocá **Marcar entregado**.
-4. En **Ingredientes**, el stock tiene que haber bajado.
+3. En **Compras**, elegí el pedido, mirá qué hay que comprar y tocá **Registrar egreso**.
+4. En **Inventario** aparecen los platos del pedido: corregí las porciones que realmente se
+   hicieron y lo facturado, y tocá **Registrar**. El pedido pasa a Entregado.
+5. En **Ingredientes**, el stock tiene que haber bajado; el movimiento queda en el historial.
 
 ### Uso diario
 
