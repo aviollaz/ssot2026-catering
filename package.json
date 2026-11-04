@@ -19,6 +19,8 @@
         "build": "tsc -b ./src/backend && tsc -p ./src/frontend",
         "start": "node --env-file-if-exists=.env ./dist/backend/server",
         "auth:create-admin": "node --env-file-if-exists=.env ./dist/backend/create-admin.js",
+        "tenant:create": "node --env-file-if-exists=.env ./dist/backend/create-tenant.js",
+        "tenant:policies": "node --env-file-if-exists=.env ./dist/backend/tenant-policies.js",
         "data:examples": "node --env-file-if-exists=.env ./dist/backend/load-examples.js",
         "test:data": "npm run build && node --env-file-if-exists=.env --test test/tab-data.integration.test.mjs",
         "ssot:load": "npm run build && postgres-migrations capture --ssot ./dist/backend/system.js",

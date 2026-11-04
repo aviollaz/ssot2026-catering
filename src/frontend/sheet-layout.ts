@@ -17,7 +17,7 @@ export function observeSheetLayout(panel: HTMLDialogElement, toggle: HTMLButtonE
         }
         if (workspace.hidden || !table || panel.matches(':modal')) return;
         const panelStyle = panel.getAttribute('style');
-        panel.style.cssText = 'display: block; visibility: hidden; width: max-content; max-width: none';
+        panel.style.cssText = 'display: block; visibility: hidden';
         const panelWidth = panel.getBoundingClientRect().width;
         if (panelStyle === null) panel.removeAttribute('style');
         else panel.setAttribute('style', panelStyle);

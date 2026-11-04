@@ -7,6 +7,7 @@ import {ApiFailure} from './api-errors.js';
 import {allowedFields} from './column-security.js';
 import {entityTable} from './entity-write.js';
 import {querySql, readQuery} from './entity-query.js';
+import {referencePairs, withoutTenant} from './tenant.js';
 import {xlsx, type Celda, type Hoja} from './xlsx.js';
 
 // Accounts never leave the system; customers' contact data is left out unless asked for.
@@ -27,7 +28,7 @@ async function hoja(db: Pick<Pool, 'query'>, name: EntityName, consulta: unknown
     const readable = allowedFields(entity, 'read');
     const query = readQuery(consulta ?? {}, readable);
     const values: unknown[] = [];
-    const {predicates, order} = querySql(readable, entity.pk, query, value => { values.push(value); return `$${values.length}`; });
+    const {predicates, order} = querySql(readable, withoutTenant(entity.pk), query, value => { values.push(value); return `$${values.length}`; });
     const columnas = Object.values(readable).filter(field => field.visible && (contacto || !datosDeContacto[name]?.includes(field.name)));
     const {rows} = await db.query<Record<string, unknown>>(`SELECT ${columnas.map(field => quote(field.name)).join(', ')} FROM ${entityTable(name)} ` +
         `WHERE ${predicates.join(' AND ') || 'TRUE'} ORDER BY ${order} LIMIT ${maxFilas + 1}`, values);
@@ -36,7 +37,7 @@ async function hoja(db: Pick<Pool, 'query'>, name: EntityName, consulta: unknown
     const nombres = new Map<string, Map<string, string>>();
     for (const fk of Object.values(entity.fks)) {
         const target = entidades.get(fk.entity)!;
-        const pairs = Object.entries(fk.fields);
+        const pairs = referencePairs(fk.fields);
         const descriptivos = Object.values(allowedFields(target, 'read')).filter(field => field.isName).map(field => field.name);
         if (pairs.length !== 1 || !descriptivos.length || !columnas.some(field => field.name === pairs[0]![0])) continue;
         const [source, destination] = pairs[0]!;

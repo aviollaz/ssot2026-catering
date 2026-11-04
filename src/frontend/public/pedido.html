@@ -73,12 +73,13 @@
         <section id="paso-consulta" class="step" aria-labelledby="titulo-consulta" hidden>
             <h2 id="titulo-consulta">Estado de tu pedido</h2>
             <div id="consulta-resultado" class="summary"></div>
-            <p><a href="/pedido">Hacer otro pedido</a></p>
+            <p><a class="pagina-empresa" href="/pedido">Hacer otro pedido</a></p>
         </section>
     </main>
 
     <footer>
         <form id="buscar" action="/pedido">
+            <input type="hidden" name="empresa" id="buscar-empresa">
             <label>¿Ya hiciste un pedido? <input name="codigo" placeholder="Código de pedido" required spellcheck="false" autocomplete="off"></label>
             <button type="submit">Consultar</button>
         </form>

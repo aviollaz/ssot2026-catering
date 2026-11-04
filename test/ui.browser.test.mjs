@@ -13,14 +13,15 @@ import {registerCateringApi} from '../dist/backend/catering.js';
 test('table navigation and spreadsheet work with the real API', {timeout: 90000}, async () => {
     await withTestDatabase(async ({pool}) => {
         await initializeUsers(pool, {username: 'browser', password: 'browser-test-password'});
-        await pool.query("INSERT INTO ssot.ingredientes (cod_ing, nombre, unidad, stock_actual) SELECT 'I' || lpad(i::text, 3, '0'), 'Ingrediente ' || i, 'g', i FROM generate_series(1,201) i");
-        await pool.query("INSERT INTO ssot.platos (cod_plato, nombre, descripcion, categoria, porciones_receta, precio_porcion, activo) VALUES ('EMP', 'Empanadas', 'De carne', 'Finger food', 12, 900, true)");
-        await pool.query("INSERT INTO ssot.recetas (cod_plato, cod_ing, cantidad) VALUES ('EMP', 'I001', 600)");
-        await pool.query("INSERT INTO ssot.servicios (cod_servicio, nombre, descripcion, precio_persona, min_personas, activo) VALUES ('COCTEL', 'Cóctel', 'De pie', 1000, 10, true)");
-        await pool.query("INSERT INTO ssot.servicio_platos (cod_servicio, cod_plato, porciones_por_persona) VALUES ('COCTEL', 'EMP', 3)");
-        await pool.query(`INSERT INTO ssot.pedidos (id, cliente_nombre, cliente_email, cliente_telefono, direccion, fecha_evento, personas, estado, cod_servicio, total, observaciones, creado)
-            VALUES ('00000000-0000-4000-8000-000000000001', 'Ana', 'ana@example.com', '1', 'Calle 1', '2026-11-12 20:00', 40, 'Confirmado', 'COCTEL', 40000, NULL, '2026-10-01 10:00')`);
-        await pool.query("INSERT INTO ssot.pedido_platos (pedido, cod_plato, porciones, precio_porcion) VALUES ('00000000-0000-4000-8000-000000000001', 'EMP', 120, 900)");
+        // Rows inserted by SQL carry the company by hand; the tests run as the initial one (helpers/database.mjs).
+        await pool.query("INSERT INTO ssot.ingredientes (tenant, nombre, unidad, stock_actual) SELECT 'default', 'Ingrediente ' || lpad(i::text, 3, '0'), 'g', i FROM generate_series(1,201) i");
+        await pool.query("INSERT INTO ssot.platos (tenant, nombre, descripcion, categoria, porciones_receta, precio_porcion, activo) VALUES ('default', 'Empanadas', 'De carne', 'Finger food', 12, 900, true)");
+        await pool.query("INSERT INTO ssot.recetas (tenant, plato, ingrediente, cantidad) VALUES ('default', 'Empanadas', 'Ingrediente 001', 600)");
+        await pool.query("INSERT INTO ssot.servicios (tenant, nombre, descripcion, precio_persona, min_personas, activo) VALUES ('default', 'Cóctel', 'De pie', 1000, 10, true)");
+        await pool.query("INSERT INTO ssot.servicio_platos (tenant, servicio, plato, porciones_por_persona) VALUES ('default', 'Cóctel', 'Empanadas', 3)");
+        await pool.query(`INSERT INTO ssot.pedidos (tenant, id, cliente_nombre, cliente_email, cliente_telefono, direccion, fecha_evento, personas, estado, servicio, total, observaciones, creado)
+            VALUES ('default', 'ANAA-2222', 'Ana', 'ana@example.com', '1', 'Calle 1', '2026-11-12 20:00', 40, 'Confirmado', 'Cóctel', 40000, NULL, '2026-10-01 10:00')`);
+        await pool.query("INSERT INTO ssot.pedido_platos (tenant, pedido, plato, porciones, precio_porcion) VALUES ('default', 'ANAA-2222', 'Empanadas', 120, 900)");
         const app = express(), auth = createAuthentication(pool, 'browser-test-secret-with-at-least-32-bytes');
         const loginRequests = [];
         app.use('/api/auth/login', (req, _res, next) => { loginRequests.push(req.method); next(); });
@@ -138,10 +139,10 @@ test('table navigation and spreadsheet work with the real API', {timeout: 90000}
                 // Paging, editing and adding reuse the existing editors while retaining the pin.
                 await evaluate("document.querySelector('.pagination [aria-label=Siguiente]').click()");
                 await until(() => evaluate("return document.querySelector('tbody [name=stock_actual]')?.value === '11'"));
-                assert.equal(await evaluate("return document.querySelector('tbody .pinned-col [name=nombre]').value"), 'Ingrediente 11');
-                await evaluate("const input=document.querySelector('tbody .pinned-col [name=nombre]'); input.value='Edited while pinned'; input.dispatchEvent(new Event('change',{bubbles:true}))");
-                await until(async () => (await pool.query("SELECT nombre FROM ssot.ingredientes WHERE cod_ing='I011'")).rows[0]?.nombre === 'Edited while pinned');
-                await until(() => evaluate("return !document.querySelector('#workspace').disabled && document.querySelector('tbody .pinned-col [name=nombre]')?.value === 'Edited while pinned'"));
+                assert.equal(await evaluate("return document.querySelector('tbody .pinned-col [name=nombre]').value"), 'Ingrediente 011');
+                await evaluate("const input=document.querySelector('tbody .pinned-col [name=nombre]'); input.value='Ingrediente 011 editado'; input.dispatchEvent(new Event('change',{bubbles:true}))");
+                await until(async () => (await pool.query("SELECT 1 FROM ssot.ingredientes WHERE nombre='Ingrediente 011 editado'")).rows.length === 1);
+                await until(() => evaluate("return !document.querySelector('#workspace').disabled && document.querySelector('tbody .pinned-col [name=nombre]')?.value === 'Ingrediente 011 editado'"));
                 await evaluate("document.querySelector('[aria-label=\"Agregar fila\"]').click(); document.querySelector('tr.new-row [name=nombre]').value='Keep draft'; document.querySelector('th[data-column=stock_actual] .column-pin').click()");
                 assert.equal(await evaluate("return document.querySelector('tr.new-row [name=nombre]').value"), 'Keep draft');
                 assert.equal(await evaluate("return document.querySelectorAll('th.pinned-col').length === 1 && document.querySelector('tr.new-row .pinned-col').dataset.column === 'stock_actual'"), true);
@@ -151,7 +152,7 @@ test('table navigation and spreadsheet work with the real API', {timeout: 90000}
                 await until(() => evaluate("return document.querySelector('th[data-column=stock_actual]').getAttribute('aria-sort') === 'ascending' && document.querySelector('tbody [name=stock_actual]')?.value === '1'"));
                 await evaluate("document.querySelector('th[data-column=stock_actual] .column-pin').click()");
                 assert.equal(await evaluate("return document.querySelectorAll('.pinned-col').length"), 0);
-                assert.deepEqual(await evaluate("return [...document.querySelectorAll('thead [data-column]')].map(cell=>cell.dataset.column)"), ['cod_ing','nombre','unidad','stock_actual','unidad_compra']);
+                assert.deepEqual(await evaluate("return [...document.querySelectorAll('thead [data-column]')].map(cell=>cell.dataset.column)"), ['nombre','unidad','stock_actual','unidad_compra']);
                 await evaluate("document.querySelector('.table-scroll').scrollLeft=0");
                 await until(() => evaluate("return document.querySelector('.scroll-cue[data-direction=left]').disabled && !document.querySelector('.scroll-cue[data-direction=right]').disabled"));
                 assert.equal(await evaluate("return getComputedStyle(document.querySelector('.scroll-cue[data-direction=right]')).visibility"), 'visible');
@@ -217,18 +218,18 @@ test('table navigation and spreadsheet work with the real API', {timeout: 90000}
                 await until(() => evaluate("return !document.querySelector('#workspace').disabled && document.querySelector('.catering-view h2')?.textContent === 'Compras' && !!document.querySelector('.catering-table')"));
                 // 120 empanadas need 120 × 600 / 12 = 6000 g of I001, with 1 g in stock.
                 assert.deepEqual(await evaluate("return [...document.querySelector('.catering-table tbody tr').cells].map(cell => cell.textContent)"),
-                    ['Ingrediente 1', 'g', '1', '6.000', '0', '5.999', '5.999']);
+                    ['Ingrediente 001', 'g', '1', '6.000', '0', '5.999', '5.999']);
                 // Delivering opens Inventario with the order's dishes, ready to correct and register as an Egreso.
                 await evaluate("[...document.querySelectorAll('.catering-view button')].find(b => b.textContent === 'Registrar egreso').click()");
                 await until(() => evaluate(`return !document.querySelector('#workspace').disabled && document.querySelector('.catering-view h2')?.textContent === 'Inventario'
-                    && document.querySelector('.inventario-form tbody select')?.selectedOptions[0]?.textContent.startsWith('EMP')
+                    && document.querySelector('.inventario-form tbody select')?.selectedOptions[0]?.textContent.startsWith('Empanadas')
                     && document.querySelector('.inventario-form tbody input')?.value === '120'`));
                 await evaluate("document.querySelector('.inventario-form').requestSubmit()");
                 await until(() => evaluate("return document.querySelector('#confirm-dialog').open"));
                 await evaluate("document.querySelector('#confirm-ok').click()");
                 await until(() => evaluate("return /Egreso registrado/.test(document.querySelector('.catering-status').textContent)"));
                 assert.deepEqual((await pool.query("SELECT estado FROM ssot.pedidos")).rows, [{estado: 'Entregado'}]);
-                assert.deepEqual((await pool.query("SELECT stock_actual FROM ssot.ingredientes WHERE cod_ing = 'I001'")).rows, [{stock_actual: 0}]);
+                assert.deepEqual((await pool.query("SELECT stock_actual FROM ssot.ingredientes WHERE nombre = 'Ingrediente 001'")).rows, [{stock_actual: 0}]);
                 await evaluate("document.querySelector('[data-entity=estadisticas]').click()");
                 await until(() => evaluate("return !document.querySelector('#workspace').disabled && document.querySelectorAll('.stat-card').length === 4"));
                 assert.deepEqual(errors, []);
@@ -237,7 +238,7 @@ test('table navigation and spreadsheet work with the real API', {timeout: 90000}
                 await evaluate("document.querySelector('#close-account').click(); window.dispatchEvent(new Event('sessionexpired'))");
                 assert.equal(await evaluate("return !document.querySelector('#authentication').hidden && !document.querySelector('#identity-form').hidden && document.querySelector('#workspace').hidden && document.querySelector('#login-user').value === '' && !document.querySelector('dialog[open]')"), true);
                 // The public page places an order without an account and shows its code.
-                await send('Page.navigate', {url: `http://127.0.0.1:${server.address().port}/pedido.html`});
+                await send('Page.navigate', {url: `http://127.0.0.1:${server.address().port}/pedido.html?empresa=default`});
                 await until(() => evaluate("return !!document.querySelector('.card.service')"));
                 await evaluate(`document.querySelector('.card.service').click(); document.querySelector('#menu-siguiente').click();
                     document.querySelector('#personas').value = '12'; document.querySelector('#fecha').value = '2030-01-15T20:00';
@@ -250,7 +251,7 @@ test('table navigation and spreadsheet work with the real API', {timeout: 90000}
                 await until(() => evaluate("return !document.querySelector('#paso-listo').hidden"));
                 const code = await evaluate("return document.querySelector('#codigo').textContent");
                 assert.deepEqual((await pool.query('SELECT estado, total, personas FROM ssot.pedidos WHERE id = $1', [code])).rows, [{estado: 'Pendiente', total: 12000, personas: 12}]);
-                assert.deepEqual((await pool.query('SELECT cod_plato, porciones FROM ssot.pedido_platos WHERE pedido = $1', [code])).rows, [{cod_plato: 'EMP', porciones: 36}]);
+                assert.deepEqual((await pool.query('SELECT plato, porciones FROM ssot.pedido_platos WHERE pedido = $1', [code])).rows, [{plato: 'Empanadas', porciones: 36}]);
                 assert.deepEqual(errors, []);
             });
         } finally {

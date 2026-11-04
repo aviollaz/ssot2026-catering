@@ -1,22 +1,22 @@
 /* Admin views outside the generic spreadsheet: Compras and Estadísticas. */
 .catering-view { overflow: auto; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding-bottom: 16px; }
 .catering-view > h2 { font-size: 1.1rem; }
-.catering-card { background: white; border: 1px solid #d2d0ce; border-radius: 6px; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+.catering-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
 .catering-card h3 { margin: 0; font-size: 1rem; }
 .catering-card p { margin: 0; }
 .catering-card .toolbar select { flex: 1; min-width: 0; max-width: 100%; }
-.catering-card label { font-size: .85rem; color: #605e5c; }
-.catering-status { margin: 0; font-size: .85rem; color: #107c41; min-height: 1em; }
-.catering-status.error { color: #d83b01; font-weight: 600; }
+.catering-card label { font-size: .85rem; color: var(--text-muted); }
+.catering-status { margin: 0; font-size: .85rem; color: var(--accent-text); min-height: 1em; }
+.catering-status.error { color: var(--error); font-weight: 600; }
 .catering-table-scroll { overflow-x: auto; }
 .catering-table th, .catering-table td { height: auto; padding: 6px 10px; }
 .catering-table th { position: static; cursor: default; }
 .catering-table td:not(:first-child), .catering-table th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
 .compras .catering-table td:last-child { font-weight: 600; }
 .stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
-.stat-card { background: white; border: 1px solid #d2d0ce; border-radius: 6px; padding: 12px 16px; display: flex; flex-direction: column; gap: 4px; }
-.stat-card span { color: #605e5c; font-size: .85rem; }
-.stat-card strong { font-size: 1.5rem; color: #107c41; }
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px; display: flex; flex-direction: column; gap: 4px; }
+.stat-card span { color: var(--text-muted); font-size: .85rem; }
+.stat-card strong { font-size: 1.5rem; color: var(--accent-text); }
 
 /* Details dialog: a parent's fields and its child tables, edited in place. */
 .detalle-hijos { display: flex; flex-direction: column; gap: 6px; }
@@ -27,14 +27,14 @@
 
 /* ☰ drawer grouped by area (src/frontend/menu.ts). */
 .menu-group { display: grid; gap: 4px; }
-.menu-group > summary { cursor: pointer; font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: #605e5c; padding: 6px 2px 2px; }
+.menu-group > summary { cursor: pointer; font-size: .8rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 6px 2px 2px; }
 .menu-group[open] > summary { margin-bottom: 2px; }
 .menu-group .menu-group { margin-left: 12px; }
 
 /* Excel export: several sheets chosen by area. */
 #export-tables { margin-top: 12px; width: 100%; }
-.exportar-dialog fieldset { border: 1px solid #d2d0ce; border-radius: 6px; margin: 8px 0; padding: 6px 12px; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.exportar-dialog fieldset { border: 1px solid var(--border); border-radius: 6px; margin: 8px 0; padding: 6px 12px; display: flex; flex-wrap: wrap; gap: 4px 16px; }
 .exportar-dialog legend { font-weight: 600; font-size: .85rem; }
 .exportar-dialog label { display: inline-flex; align-items: center; gap: 4px; }
 .detalle-dialog { padding-top: 0; }
-.detalle-dialog > .dialog-header { position: sticky; top: 0; z-index: 1; background: white; padding-top: 14px; }
+.detalle-dialog > .dialog-header { position: sticky; top: 0; z-index: 1; background: var(--surface); padding-top: 14px; }

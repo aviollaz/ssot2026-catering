@@ -1,6 +1,6 @@
 // Backend-only specialization of the public protocol using the concrete SSOT.
 import type {EntityInfoOf, EntityInstanceType} from 'system-definition';
-import type {myRecords, myEntities} from './system.js';
+import type {myRecords, myEntities, tenantField} from './system.js';
 import type {InputConstraints} from './value-types.js';
 import type {EntityResponse as BrowserEntityResponse} from './browser-contract.js';
 export type {EntityWindow, ApiError, AuthenticatedUser, LoginResponse, RecoveryCodesResponse} from './browser-contract.js';
@@ -51,7 +51,8 @@ export type EntityForeignKey = {
 
 export type EntityResponse<E extends EntityName = EntityName> = E extends EntityName ? Pick<BrowserEntityResponse, 'label' | 'browsing' | 'readOnly' | 'children' | 'versions' | 'window'> & {
     name: E;
-    pk: (typeof myEntities)[E]['pk'];
+    // Without the hidden tenant column (tenant.ts).
+    pk: Exclude<(typeof myEntities)[E]['pk'][number], typeof tenantField>[];
     columns: EntityColumn<E>[];
     inputs: EntityInputColumn<E>[];
     foreignKeys: EntityForeignKey[];

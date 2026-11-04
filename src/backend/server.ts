@@ -7,8 +7,11 @@ import {createAuthentication, registerAuthApi} from './auth.js';
 import {initializeUsers, reportInitialization} from './bootstrap.js';
 import {registerEntityEvents} from './entity-events.js';
 import {registerCateringApi} from './catering.js';
+import {tenantPool} from './tenant.js';
 
-const pool = new Pool(databaseConfig);
+// Every query runs as the request's company (tenant.ts).
+const database = new Pool(databaseConfig);
+const pool = tenantPool(database);
 const app = express();
 const auth = createAuthentication(pool);
 const publish = registerEntityEvents(app, auth);
@@ -35,5 +38,5 @@ try {
 } catch {
     console.error('No se pudo inicializar la app. Verificá las migraciones y AUTH_ADMIN_USERNAME/AUTH_ADMIN_PASSWORD para el primer arranque.');
     process.exitCode = 1;
-    await pool.end();
+    await database.end();
 }

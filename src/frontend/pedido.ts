@@ -1,4 +1,4 @@
-// Public order page: no account, the order's uuid is the code to check it later.
+// Public order page of one company, /pedido?empresa=<código>: no account, the order's code is how to check it later.
 import type {ApiError} from '../backend/browser-contract.js';
 import type {CatalogoResponse, CatalogoServicio, EstadoPedidoResponse, NuevoPedido, NuevoPedidoResponse} from '../backend/catering-contract.js';
 import {element} from './dom.js';
@@ -20,6 +20,10 @@ let catalogo: CatalogoResponse;
 let modo: 'servicio' | 'carta' = 'servicio';
 let servicio: CatalogoServicio | undefined;
 const porciones = new Map<string, number>();
+
+const empresa = new URLSearchParams(location.search).get('empresa') ?? '';
+const publico = (path: string) => `/api/public${path}?empresa=${encodeURIComponent(empresa)}`;
+const consulta = (codigo: string) => `/pedido?empresa=${encodeURIComponent(empresa)}&codigo=${encodeURIComponent(codigo)}`;
 
 async function api<T>(path: string, body?: unknown): Promise<T> {
     const response = await fetch(path, body === undefined ? {} : {
@@ -68,7 +72,7 @@ function tarjetasServicios(): void {
         card.className = 'card service';
         card.setAttribute('aria-pressed', String(servicio === s));
         const platos = element('ul');
-        platos.append(...s.platos.map(p => element('li', p.porciones_por_persona > 1 ? `${p.nombre} × ${p.porciones_por_persona}` : p.nombre)));
+        platos.append(...s.platos.map(p => element('li', p.porciones_por_persona > 1 ? `${p.plato} × ${p.porciones_por_persona}` : p.plato)));
         card.append(element('h3', s.nombre), element('p', s.descripcion ?? ''), platos,
             Object.assign(element('p', `${pesos(s.precio_persona)} por persona · desde ${s.min_personas} personas`), {className: 'price'}));
         card.onclick = () => { servicio = s; tarjetasServicios(); };
@@ -90,15 +94,15 @@ function cartaPorCategoria(): void {
             cantidad.type = 'number';
             cantidad.min = '0';
             cantidad.step = '1';
-            cantidad.value = String(porciones.get(p.cod_plato) ?? 0);
+            cantidad.value = String(porciones.get(p.nombre) ?? 0);
             cantidad.setAttribute('aria-label', `Porciones de ${p.nombre}`);
             cantidad.oninput = () => {
                 const value = cantidad.valueAsNumber;
-                if (Number.isInteger(value) && value > 0) porciones.set(p.cod_plato, value);
-                else porciones.delete(p.cod_plato);
-                card.classList.toggle('selected', porciones.has(p.cod_plato));
+                if (Number.isInteger(value) && value > 0) porciones.set(p.nombre, value);
+                else porciones.delete(p.nombre);
+                card.classList.toggle('selected', porciones.has(p.nombre));
             };
-            card.classList.toggle('selected', porciones.has(p.cod_plato));
+            card.classList.toggle('selected', porciones.has(p.nombre));
             const label = element('label', 'Porciones ');
             label.append(cantidad);
             card.append(element('h3', p.nombre), element('p', p.descripcion ?? ''),
@@ -118,8 +122,8 @@ function pedido(): NuevoPedido {
         fecha_evento: fecha.value, personas: personas.valueAsNumber, observaciones: texto('observaciones') || null,
     };
     return modo === 'servicio'
-        ? {...cliente, cod_servicio: servicio!.cod_servicio}
-        : {...cliente, platos: [...porciones].map(([cod_plato, cantidad]) => ({cod_plato, porciones: cantidad}))};
+        ? {...cliente, servicio: servicio!.nombre}
+        : {...cliente, platos: [...porciones].map(([plato, cantidad]) => ({plato, porciones: cantidad}))};
 }
 
 function resumen(): void {
@@ -131,8 +135,8 @@ function resumen(): void {
         total = servicio!.precio_persona * datos.personas;
     } else {
         total = 0;
-        for (const [codigo, cantidad] of porciones) {
-            const plato = catalogo.platos.find(p => p.cod_plato === codigo)!;
+        for (const [nombre, cantidad] of porciones) {
+            const plato = catalogo.platos.find(p => p.nombre === nombre)!;
             filas.push([`${plato.nombre} · ${cantidad} × ${pesos(plato.precio_porcion)}`, pesos(cantidad * plato.precio_porcion)]);
             total += cantidad * plato.precio_porcion;
         }
@@ -160,7 +164,7 @@ async function consultar(codigo: string): Promise<void> {
     mostrar('consulta');
     const resultado = $('#consulta-resultado');
     try {
-        const estado = await api<EstadoPedidoResponse>(`/api/public/pedidos/${encodeURIComponent(codigo)}`);
+        const estado = await api<EstadoPedidoResponse>(publico(`/pedidos/${encodeURIComponent(codigo)}`));
         const detalle = element('dl');
         const badge = element('dd', estado.estado);
         badge.className = `badge ${estado.estado.toLowerCase()}`;
@@ -175,13 +179,17 @@ async function consultar(codigo: string): Promise<void> {
 }
 
 async function iniciar(): Promise<void> {
+    // Links and the lookup form stay on this company's page.
+    $<HTMLInputElement>('#buscar-empresa').value = empresa;
+    for (const link of document.querySelectorAll<HTMLAnchorElement>('.pagina-empresa')) link.href = `/pedido?empresa=${encodeURIComponent(empresa)}`;
     for (const button of document.querySelectorAll<HTMLButtonElement>('[data-back]')) {
         button.onclick = () => mostrar(pasos[pasos.indexOf(button.closest<HTMLElement>('.step')!.id.slice(5) as Paso) - 1]!);
     }
     const codigo = new URLSearchParams(location.search).get('codigo');
     if (codigo) return consultar(codigo.trim());
 
-    catalogo = await api<CatalogoResponse>('/api/public/catalogo');
+    catalogo = await api<CatalogoResponse>(publico('/catalogo'));
+    $('.brand').textContent = catalogo.empresa;
     tarjetasServicios();
     cartaPorCategoria();
     for (const button of document.querySelectorAll<HTMLButtonElement>('.mode-switch button')) {
@@ -202,9 +210,9 @@ async function iniciar(): Promise<void> {
     confirmar.onclick = async () => {
         confirmar.disabled = true;
         try {
-            const {id} = await api<NuevoPedidoResponse>('/api/public/pedidos', pedido());
+            const {id} = await api<NuevoPedidoResponse>(publico('/pedidos'), pedido());
             $('#codigo').textContent = id;
-            $<HTMLAnchorElement>('#link-consulta').href = `/pedido?codigo=${encodeURIComponent(id)}`;
+            $<HTMLAnchorElement>('#link-consulta').href = consulta(id);
             mostrar('listo');
         } catch (failure) {
             error.textContent = failure instanceof Error ? failure.message : 'No pudimos registrar el pedido.';
@@ -213,4 +221,6 @@ async function iniciar(): Promise<void> {
     mostrar('menu');
 }
 
-iniciar().catch(() => { error.textContent = 'No pudimos cargar el catálogo. Probá de nuevo en unos minutos.'; });
+iniciar().catch(failure => {
+    error.textContent = failure instanceof Error && !empresa ? failure.message : 'No pudimos cargar el catálogo. Probá de nuevo en unos minutos.';
+});

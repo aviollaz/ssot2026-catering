@@ -12,6 +12,8 @@ import {registerEntityApi} from '../dist/backend/api.js';
 import {initializeUsers} from '../dist/backend/bootstrap.js';
 import {hashPassword, verifyPassword} from '../dist/backend/credentials.js';
 import {versionOf} from './helpers/version.mjs';
+import {asInitialCompany, createSchema, scratchConfig} from './helpers/database.mjs';
+import {tenantPool} from '../dist/backend/tenant.js';
 
 const value = result => { if (!result.ok) throw new Error(JSON.stringify(result.problems)); return result.value; };
 const password = 'initial-auth-test-password';
@@ -20,25 +22,23 @@ async function start(t, {initialize = true, legacy = false} = {}) {
     const {schema} = databaseSettings.database;
     const scratch = createPostgresScratch({...databaseSettings.database, ...databaseSettings.initialUser}, [schema]);
     const handle = value(await scratch.create('clean-target'));
-    let pool, server;
+    let raw, server;
     t.after(async () => {
         if (server) await new Promise(resolve => server.close(resolve));
-        await pool?.end();
+        await raw?.end();
         value(await scratch.destroy(handle));
     });
-    const desired = legacy
-        ? JSON.parse(await readFile('migrations/entries/0002_authentication/metadata.json', 'utf8'))['states/to.json'].schema
-        : value(projectSsotSchema(value(decodeSqlSsot(ssot, sqlMapping)), schema));
-    for (const sql of value(generateCreate(desired)).statements) await handle.session.query(sql.text, sql.values);
-    await handle.session.query(`GRANT USAGE ON SCHEMA ${quote(schema)} TO ${quote(databaseSettings.appUser.user)}`, []);
-    await handle.session.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${quote(schema)} TO ${quote(databaseSettings.appUser.user)}`, []);
-    const config = {...databaseConfig, database: handle.id};
-    if (config.connectionString) {
-        const url = new URL(config.connectionString);
-        url.pathname = '/' + handle.id;
-        config.connectionString = url.toString();
-    }
-    pool = new Pool(config);
+    if (legacy) {
+        const desired = JSON.parse(await readFile('migrations/entries/0002_authentication/metadata.json', 'utf8'))['states/to.json'].schema;
+        for (const sql of value(generateCreate(desired)).statements) await handle.session.query(sql.text, sql.values);
+        await handle.session.query(`GRANT USAGE ON SCHEMA ${quote(schema)} TO ${quote(databaseSettings.appUser.user)}`, []);
+        await handle.session.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${quote(schema)} TO ${quote(databaseSettings.appUser.user)}`, []);
+    } else await createSchema(handle);
+    const config = scratchConfig(handle);
+    raw = new Pool(config);
+    // The app's pool; the tests' own checks run as the initial company, seeing every user.
+    const pool = tenantPool(raw);
+    const checks = {query: (...args) => asInitialCompany(() => pool.query(...args)), connect: () => pool.connect()};
     if (initialize) await initializeUsers(pool, {username: 'admin', password});
     const app = express();
     const auth = createAuthentication(pool, 'integration-test-secret-with-at-least-32-bytes');
@@ -55,33 +55,33 @@ async function start(t, {initialize = true, legacy = false} = {}) {
         assert.equal(response.status, 200);
         return response.json();
     };
-    return {pool, request, login, config, handle};
+    return {pool: checks, request, login, config, handle};
 }
 
 test('PostgreSQL: order FKs accept existing services and null, and reject missing services and referenced key changes', async t => {
     const {request, login} = await start(t);
     const {token} = await login('admin');
     const send = (entity, method, body) => request(`/api/entities/${entity}`, method, body, token);
-    const service = {cod_servicio: 'CENA', nombre: 'Cena', descripcion: null, precio_persona: 100, min_personas: 1, activo: true};
+    const service = {nombre: 'CENA', descripcion: null, precio_persona: 100, min_personas: 1, activo: true};
     assert.equal((await send('servicios', 'POST', service)).status, 204);
     const row = {cliente_nombre: 'Con servicio', cliente_email: 'a@example.com', cliente_telefono: '1', direccion: 'Calle 1',
-        fecha_evento: '2026-11-12T20:00', personas: 10, estado: 'Pendiente', cod_servicio: 'CENA', total: 1000, observaciones: null};
+        fecha_evento: '2026-11-12T20:00', personas: 10, estado: 'Pendiente', servicio: 'CENA', total: 1000, observaciones: null};
     assert.equal((await send('pedidos', 'POST', row)).status, 204);
     const metadata = await (await send('pedidos', 'GET')).json();
     const key = {id: metadata.rows[0].id};
     const version = versionOf(metadata, key);
-    const serviceVersion = versionOf(await (await send('servicios', 'GET')).json(), {cod_servicio: 'CENA'});
-    assert.deepEqual(metadata.foreignKeys.find(fk => fk.name === 'servicio'), {name: 'servicio', entity: 'servicios', fields: {cod_servicio: 'cod_servicio'}, displayFields: ['cod_servicio', 'nombre']});
+    const serviceVersion = versionOf(await (await send('servicios', 'GET')).json(), {nombre: 'CENA'});
+    assert.deepEqual(metadata.foreignKeys.find(fk => fk.name === 'servicio'), {name: 'servicio', entity: 'servicios', fields: {servicio: 'nombre'}, displayFields: ['nombre']});
     for (const response of [
-        await send('pedidos', 'POST', {...row, cliente_nombre: 'Servicio inexistente', cod_servicio: 'MISSING'}),
-        await send('pedidos', 'PUT', {key, row: {...row, cod_servicio: 'MISSING'}, version}),
-        await send('servicios', 'DELETE', {cod_servicio: 'CENA'}),
-        await send('servicios', 'PUT', {key: {cod_servicio: 'CENA'}, row: {...service, cod_servicio: 'OTRO'}, version: serviceVersion}),
+        await send('pedidos', 'POST', {...row, cliente_nombre: 'Servicio inexistente', servicio: 'MISSING'}),
+        await send('pedidos', 'PUT', {key, row: {...row, servicio: 'MISSING'}, version}),
+        await send('servicios', 'DELETE', {nombre: 'CENA'}),
+        await send('servicios', 'PUT', {key: {nombre: 'CENA'}, row: {...service, nombre: 'OTRO'}, version: serviceVersion}),
     ]) assert.equal(response.status, 409, await response.text());
-    assert.equal((await send('servicios', 'PUT', {key: {cod_servicio: 'CENA'}, row: {...service, nombre: 'Cena actualizada'}, version: serviceVersion})).status, 204);
-    assert.equal((await send('pedidos', 'PUT', {key, row: {...row, cod_servicio: null}, version})).status, 204);
-    assert.equal((await send('pedidos', 'POST', {...row, cliente_nombre: 'Sin servicio', cod_servicio: null})).status, 204);
-    assert.equal((await send('servicios', 'DELETE', {cod_servicio: 'CENA'})).status, 204);
+    assert.equal((await send('servicios', 'PUT', {key: {nombre: 'CENA'}, row: {...service, descripcion: 'Cena actualizada'}, version: serviceVersion})).status, 204);
+    assert.equal((await send('pedidos', 'PUT', {key, row: {...row, servicio: null}, version})).status, 204);
+    assert.equal((await send('pedidos', 'POST', {...row, cliente_nombre: 'Sin servicio', servicio: null})).status, 204);
+    assert.equal((await send('servicios', 'DELETE', {nombre: 'CENA'})).status, 204);
 });
 
 test('PostgreSQL: the FK migration preserves data and rolls back when an existing plan is missing', async t => {
@@ -208,5 +208,5 @@ test('PostgreSQL: the incremental migration removes roles/status while preservin
     const target = metadata['states/to.json'];
     assert.deepEqual(value(await assessSchema(value(decodeSqlSsot(target.ssot, target.persistence.representations.postgres)), databaseSettings.database.schema, handle.session)), {equal: true, differences: []});
     assert.deepEqual(await initializeUsers(pool, {username: undefined, password: undefined}), {created: false});
-    await login('legacy');
+    // Logging in needs the user's company, added by 0010; this schema is the 0003 one.
 });
