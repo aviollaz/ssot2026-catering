@@ -141,10 +141,12 @@ td input[type=checkbox] { width: auto; height: auto; }
 .confirm-dialog h2 { font-size: 1.15rem; margin: 0 0 6px; color: var(--text); }
 .confirm-dialog p { margin: 0; font-size: .9rem; color: var(--text-muted); line-height: 1.4; }
 .confirm-actions { justify-content: flex-end; }
-#tables-panel { inset: 0 auto 0 0; margin: 0; height: 100dvh; max-height: 100dvh; width: max-content; max-width: calc(100% - 32px); border-radius: 0; }
+/* Fixed width, so opening an area wraps its buttons instead of widening the panel; still at least as wide as
+   its widest button, so docking depends on the content (sheet-layout.ts docks it by this width). */
+#tables-panel { inset: 0 auto 0 0; margin: 0; height: 100dvh; max-height: 100dvh; width: 30rem; min-width: min-content; max-width: calc(100% - 32px); border-radius: 0; }
 #table-search { width: 100%; margin-bottom: 12px; }
 #table-list { display: grid; gap: 4px; }
-#table-list button { text-align: left; white-space: nowrap; }
+#table-list button { text-align: left; white-space: nowrap; margin: 0 4px 4px 0; }
 #table-list button[aria-current=true] { background: var(--hover); border-color: var(--border-strong); }
 
 .icon-action { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 44px; min-height: 44px; padding: 8px; }
