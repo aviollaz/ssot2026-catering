@@ -27,9 +27,9 @@ declare const uncheckedName: string;
 // @ts-expect-error An unchecked runtime string cannot become a SQL column.
 users.column(uncheckedName);
 
-const dishes = entitySql('platos').select('cod_plato', 'descripcion', 'porciones_receta');
+const dishes = entitySql('platos').select('nombre', 'descripcion', 'porciones_receta');
 const dishResult = dishes.query(db);
 type Dish = Awaited<typeof dishResult>['rows'][number];
-export type KeyIsRequired = Assert<Equal<Dish['cod_plato'], string>>;
+export type KeyIsRequired = Assert<Equal<Dish['nombre'], string>>;
 export type NullabilityIsPreserved = Assert<Equal<Dish['descripcion'], string | null>>;
 export type RequiredIsPreserved = Assert<Equal<Dish['porciones_receta'], number>>;

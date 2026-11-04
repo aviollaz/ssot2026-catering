@@ -48,33 +48,33 @@ test('entity data preserves JSON value types and exposes only display metadata',
     let sql;
     const base = await startApi(t, async text => {
         sql = text;
-        return entityResult([{cod_plato: 'EMP', cod_ing: 'HAR', cantidad: 500, private_extra: 'omit'}]);
+        return entityResult([{plato: 'EMP', ingrediente: 'HAR', cantidad: 500, private_extra: 'omit'}]);
     });
     const response = await fetch(`${base}/api/entities/recetas`);
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), {
         name: 'recetas',
         label: 'Recetas', browsing, readOnly: false, children: [], window: {kind: 'complete'}, versions: ['1'],
-        pk: ['cod_plato', 'cod_ing'],
+        pk: ['plato', 'ingrediente'],
         columns: [
-            {name: 'cod_plato', label: 'Plato', type: 'text', nullable: false, writable: true, constraints: text},
-            {name: 'cod_ing', label: 'Ingrediente', type: 'text', nullable: false, writable: true, constraints: text},
+            {name: 'plato', label: 'Plato', type: 'text', nullable: false, writable: true, constraints: text},
+            {name: 'ingrediente', label: 'Ingrediente', type: 'text', nullable: false, writable: true, constraints: text},
             {name: 'cantidad', label: 'Cantidad por receta', type: 'posDecimal', nullable: false, writable: true, constraints: decimal},
         ],
         inputs: [
-            {name: 'cod_plato', label: 'Plato', type: 'text', nullable: false, constraints: text, optionalOnUpdate: false},
-            {name: 'cod_ing', label: 'Ingrediente', type: 'text', nullable: false, constraints: text, optionalOnUpdate: false},
+            {name: 'plato', label: 'Plato', type: 'text', nullable: false, constraints: text, optionalOnUpdate: false},
+            {name: 'ingrediente', label: 'Ingrediente', type: 'text', nullable: false, constraints: text, optionalOnUpdate: false},
             {name: 'cantidad', label: 'Cantidad por receta', type: 'posDecimal', nullable: false, constraints: decimal, optionalOnUpdate: false},
         ],
         foreignKeys: [
-            {name: 'plato', entity: 'platos', fields: {cod_plato: 'cod_plato'}, displayFields: ['cod_plato', 'nombre']},
-            {name: 'ingrediente', entity: 'ingredientes', fields: {cod_ing: 'cod_ing'}, displayFields: ['cod_ing', 'nombre']},
+            {name: 'plato', entity: 'platos', fields: {plato: 'nombre'}, displayFields: ['nombre']},
+            {name: 'ingrediente', entity: 'ingredientes', fields: {ingrediente: 'nombre'}, displayFields: ['nombre']},
         ],
-        rows: [{cod_plato: 'EMP', cod_ing: 'HAR', cantidad: 500}],
+        rows: [{plato: 'EMP', ingrediente: 'HAR', cantidad: 500}],
     });
-    assert.match(sql, /SELECT "cod_plato", "cod_ing", "cantidad"/);
+    assert.match(sql, /SELECT "plato", "ingrediente", "cantidad"/);
     assert.match(sql, /FROM "ssot"\."recetas"/);
-    assert.match(sql, /ORDER BY "cod_plato" COLLATE "C" asc NULLS LAST, "cod_ing" COLLATE "C" asc NULLS LAST/);
+    assert.match(sql, /ORDER BY "plato" COLLATE "C" asc NULLS LAST, "ingrediente" COLLATE "C" asc NULLS LAST/);
 });
 
 test('empty entities still return their columns', async t => {
@@ -84,15 +84,15 @@ test('empty entities still return their columns', async t => {
     const body = await response.json();
     assert.equal(body.name, 'ingredientes');
     assert.deepEqual(body.rows, []);
-    assert.deepEqual(body.columns.map(column => column.name), ['cod_ing', 'nombre', 'unidad', 'stock_actual', 'unidad_compra']);
-    assert.equal(body.columns[3].type, 'cantidad');
+    assert.deepEqual(body.columns.map(column => column.name), ['nombre', 'unidad', 'stock_actual', 'unidad_compra']);
+    assert.equal(body.columns[2].type, 'cantidad');
 });
 
 test('database errors and rows inconsistent with the SSOT return a JSON error', async t => {
     const rows = [
-        {cod_plato: 'EMP', cod_ing: 'HAR', cantidad: '500'},
-        {cod_plato: null, cod_ing: 'HAR', cantidad: 500},
-        {cod_plato: 'EMP', cantidad: 500},
+        {plato: 'EMP', ingrediente: 'HAR', cantidad: '500'},
+        {plato: null, ingrediente: 'HAR', cantidad: 500},
+        {plato: 'EMP', cantidad: 500},
     ];
     const base = await startApi(t, async () => {
         if (rows.length) return entityResult([rows.shift()]);
@@ -159,12 +159,12 @@ test('dish metadata supplies the positive minimum and enum choices to editors', 
     assert.equal(input('descripcion').nullable, true);
 });
 
-const dish = {cod_plato: 'EMP', nombre: 'Empanadas', descripcion: null, categoria: 'Finger food', porciones_receta: 12, precio_porcion: 900, activo: true};
+const dish = {nombre: 'Empanadas', descripcion: null, categoria: 'Finger food', porciones_receta: 12, precio_porcion: 900, activo: true};
 
 test('invalid dish values and keys are rejected before querying on create, update and delete', async t => {
     let calls = 0;
     const base = await startApi(t, async () => { calls++; return {rowCount: 1}; });
-    const key = {cod_plato: dish.cod_plato};
+    const key = {nombre: dish.nombre};
     for (const [field, values] of [
         ['porciones_receta', [0, -1, 1.5, '12', null]],
         ['categoria', [1, 'entrada', 'Otra', null]],
@@ -180,8 +180,8 @@ test('invalid dish values and keys are rejected before querying on create, updat
         }
     }
     for (const value of [null, 1]) {
-        assert.equal((await send(base, 'platos', 'DELETE', {cod_plato: value})).status, 400);
-        assert.equal((await send(base, 'platos', 'PUT', {key: {cod_plato: value}, row: dish, version: '1'})).status, 400);
+        assert.equal((await send(base, 'platos', 'DELETE', {nombre: value})).status, 400);
+        assert.equal((await send(base, 'platos', 'PUT', {key: {nombre: value}, row: dish, version: '1'})).status, 400);
     }
     assert.equal(calls, 0);
 });
@@ -192,45 +192,45 @@ test('valid enums, positive boundary and nullable description retain their value
     for (const descripcion of ['Al horno', '', null]) {
         const row = {...dish, porciones_receta: 1, descripcion};
         assert.equal((await send(base, 'platos', 'POST', row)).status, 204);
-        assert.deepEqual(queries.at(-1).values, Object.values(row));
+        assert.deepEqual(queries.at(-1).values, [...Object.values(row), '']);
         const updated = {...row, categoria: 'Entrada'};
-        assert.equal((await send(base, 'platos', 'PUT', {key: {cod_plato: row.cod_plato}, row: updated, version: '1'})).status, 204);
-        assert.deepEqual(queries.at(-1).values, [...Object.values(updated), row.cod_plato, '1']);
+        assert.equal((await send(base, 'platos', 'PUT', {key: {nombre: row.nombre}, row: updated, version: '1'})).status, 204);
+        assert.deepEqual(queries.at(-1).values, [...Object.values(updated), row.nombre, '1']);
     }
 });
 
 test('CRUD uses parameters and targets the original key when the key is edited', async t => {
     const queries = [];
     const base = await startApi(t, async (sql, values) => { queries.push({sql, values}); return {rowCount: 1}; });
-    const row = {cod_ing: '', nombre: "O'Reilly <script>", unidad: 'g', stock_actual: 0, unidad_compra: null};
+    const row = {nombre: "O'Reilly <script>", unidad: 'g', stock_actual: 0, unidad_compra: null};
     assert.equal((await send(base, 'ingredientes', 'POST', row)).status, 204);
     assert.match(queries[0].sql, /^INSERT INTO "ssot"\."ingredientes"/);
-    assert.deepEqual(queries[0].values, ['', row.nombre, 'g', 0, null]);
+    assert.deepEqual(queries[0].values, [row.nombre, 'g', 0, null, '']);
     assert.ok(!queries[0].sql.includes(row.nombre));
-    assert.equal((await send(base, 'ingredientes', 'PUT', {key: {cod_ing: ''}, version: '1', row: {...row, cod_ing: 'RENAMED', nombre: 'Renamed', stock_actual: 5}})).status, 204);
-    assert.match(queries[1].sql, /WHERE "cod_ing" = \$6 AND xmin::text = \$7$/);
-    assert.deepEqual(queries[1].values, ['RENAMED', 'Renamed', 'g', 5, null, '', '1']);
-    assert.equal((await send(base, 'recetas', 'DELETE', {cod_plato: 'EMP', cod_ing: 'RENAMED'})).status, 204);
-    assert.match(queries[2].sql, /^DELETE FROM "ssot"\."recetas" WHERE "cod_plato" = \$1 AND "cod_ing" = \$2$/);
-    assert.deepEqual(queries[2].values, ['EMP', 'RENAMED']);
-    const service = {cod_servicio: 'CENA', nombre: 'Cena', descripcion: null, precio_persona: 1, min_personas: 1, activo: false};
+    assert.equal((await send(base, 'ingredientes', 'PUT', {key: {nombre: row.nombre}, version: '1', row: {...row, nombre: 'Renamed', stock_actual: 5}})).status, 204);
+    assert.match(queries[1].sql, /WHERE "nombre" = \$5 AND xmin::text = \$6$/);
+    assert.deepEqual(queries[1].values, ['Renamed', 'g', 5, null, row.nombre, '1']);
+    assert.equal((await send(base, 'recetas', 'DELETE', {plato: 'EMP', ingrediente: 'Renamed'})).status, 204);
+    assert.match(queries[2].sql, /^DELETE FROM "ssot"\."recetas" WHERE "plato" = \$1 AND "ingrediente" = \$2$/);
+    assert.deepEqual(queries[2].values, ['EMP', 'Renamed']);
+    const service = {nombre: 'Cena', descripcion: null, precio_persona: 1, min_personas: 1, activo: false};
     assert.equal((await send(base, 'servicios', 'POST', service)).status, 204);
-    assert.deepEqual(queries[3].values, Object.values(service));
+    assert.deepEqual(queries[3].values, [...Object.values(service), '']);
 });
 
 test('invalid shapes, types, keys and SSOT business rules fail before querying', async t => {
     let calls = 0;
     const base = await startApi(t, async () => { calls++; return {rowCount: 1}; });
     const order = {cliente_nombre: 'Ana', cliente_email: 'ana@example.com', cliente_telefono: '1', direccion: 'Calle 1',
-        fecha_evento: '2026-11-12T20:00', personas: 10, estado: 'Pendiente', cod_servicio: null, total: 1000, observaciones: null};
+        fecha_evento: '2026-11-12T20:00', personas: 10, estado: 'Pendiente', servicio: null, total: 1000, observaciones: null};
     for (const body of [null, [], {}, {...order, cliente_nombre: null}, {...order, personas: '10'}, {...order, estado: 'Listo'},
         {...order, fecha_evento: '2026-13-01T20:00'}, {...order, extra: true}, {...order, id: 'chosen'}, {...order, cliente_email: 'sin-arroba'}]) {
         const response = await send(base, 'pedidos', 'POST', body);
         assert.equal(response.status, 400);
         assert.equal(typeof (await response.json()).error, 'string');
     }
-    const row = {cod_plato: 'EMP', cod_ing: 'HAR', cantidad: 1};
-    for (const key of [{}, {cod_plato: null, cod_ing: 'HAR'}, {cod_plato: 'EMP'}, {cod_plato: 'EMP', cod_ing: 'HAR', extra: true}]) {
+    const row = {plato: 'EMP', ingrediente: 'HAR', cantidad: 1};
+    for (const key of [{}, {plato: null, ingrediente: 'HAR'}, {plato: 'EMP'}, {plato: 'EMP', ingrediente: 'HAR', extra: true}]) {
         assert.equal((await send(base, 'recetas', 'DELETE', key)).status, 400);
         assert.equal((await send(base, 'recetas', 'PUT', {key, row, version: '1'})).status, 400);
     }
@@ -244,9 +244,9 @@ test('missing rows and constraint conflicts have useful, non-sensitive errors', 
         if (sql.startsWith('INSERT')) throw Object.assign(new Error('Internal query and credentials'), {code: '23505'});
         return {rowCount: 0};
     });
-    const row = {cod_ing: 'B', nombre: 'B', unidad: 'g', stock_actual: 0, unidad_compra: null};
-    assert.equal((await send(base, 'ingredientes', 'PUT', {key: {cod_ing: 'A'}, version: '1', row})).status, 409);
-    assert.equal((await send(base, 'ingredientes', 'DELETE', {cod_ing: 'A'})).status, 404);
+    const row = {nombre: 'B', unidad: 'g', stock_actual: 0, unidad_compra: null};
+    assert.equal((await send(base, 'ingredientes', 'PUT', {key: {nombre: 'A'}, version: '1', row})).status, 409);
+    assert.equal((await send(base, 'ingredientes', 'DELETE', {nombre: 'A'})).status, 404);
     const conflict = await send(base, 'ingredientes', 'POST', row);
     assert.equal(conflict.status, 409);
     assert.deepEqual(await conflict.json(), {error: 'Ya existe un registro con esa clave.'});
@@ -256,27 +256,27 @@ test('delete dependency checks report every SSOT foreign key, including renamed 
     const queries = [];
     const base = await startApi(t, async (sql, values) => {
         queries.push({sql, values});
-        if (sql.includes('FROM "ssot"."recetas"')) return {rows: [{count: 2, keys: [{cod_plato: 'EMP', cod_ing: 'HAR'}]}]};
-        if (sql.includes('FROM "ssot"."pedido_platos"')) return {rows: [{count: 1, keys: [{pedido: 'p1', cod_plato: 'EMP'}]}]};
+        if (sql.includes('FROM "ssot"."recetas"')) return {rows: [{count: 2, keys: [{plato: 'EMP', ingrediente: 'HAR'}]}]};
+        if (sql.includes('FROM "ssot"."pedido_platos"')) return {rows: [{count: 1, keys: [{pedido: 'p1', plato: 'EMP'}]}]};
         return {rows: [{count: 0, keys: []}]};
     });
     const dish = await fetch(`${base}/api/entities/platos/delete-check`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({keys: [{cod_plato: 'EMP'}]}),
+        body: JSON.stringify({keys: [{nombre: 'EMP'}]}),
     });
     assert.equal(dish.status, 200);
     assert.deepEqual(await dish.json(), {
         blockers: [
-            {entity: 'pedido_platos', relationship: 'plato', count: 1, keys: [{pedido: 'p1', cod_plato: 'EMP'}]},
-            {entity: 'recetas', relationship: 'plato', count: 2, keys: [{cod_plato: 'EMP', cod_ing: 'HAR'}]},
+            {entity: 'pedido_platos', relationship: 'plato', count: 1, keys: [{pedido: 'p1', plato: 'EMP'}]},
+            {entity: 'recetas', relationship: 'plato', count: 2, keys: [{plato: 'EMP', ingrediente: 'HAR'}]},
         ],
     });
     const recipe = queries.find(query => query.sql.includes('FROM "ssot"."recetas"'));
     assert.match(recipe.sql, /LIMIT 10/);
-    assert.match(recipe.sql, /SELECT DISTINCT dependent\."cod_plato", dependent\."cod_ing"/);
+    assert.match(recipe.sql, /SELECT DISTINCT dependent\."plato", dependent\."ingrediente"/);
     assert.doesNotMatch(recipe.sql, /SELECT DISTINCT dependent\.\*/);
-    assert.match(recipe.sql, /dependent\."cod_plato" = target\."cod_plato"/);
+    assert.match(recipe.sql, /dependent\."tenant" = target\."tenant" AND dependent\."plato" = target\."nombre"/);
     assert.deepEqual(recipe.values, ['EMP']);
 
     const order = await fetch(`${base}/api/entities/pedidos/delete-check`, {
@@ -286,7 +286,7 @@ test('delete dependency checks report every SSOT foreign key, including renamed 
     });
     assert.equal(order.status, 200);
     assert.deepEqual(await order.json(), {
-        blockers: [{entity: 'pedido_platos', relationship: 'pedido', count: 1, keys: [{pedido: 'p1', cod_plato: 'EMP'}]}],
+        blockers: [{entity: 'pedido_platos', relationship: 'pedido', count: 1, keys: [{pedido: 'p1', plato: 'EMP'}]}],
     });
     assert.match(queries.at(-1).sql, /dependent\."pedido" = target\."id"/);
 });
@@ -294,7 +294,7 @@ test('delete dependency checks report every SSOT foreign key, including renamed 
 test('bulk delete rejects malformed and duplicate selections before querying', async t => {
     let calls = 0;
     const base = await startApi(t, async () => { calls++; return {rows: []}; });
-    for (const keys of [[], [{cod_ing: 1}], [{cod_ing: 'HAR'}, {cod_ing: 'HAR'}]]) {
+    for (const keys of [[], [{nombre: 1}], [{nombre: 'HAR'}, {nombre: 'HAR'}]]) {
         const response = await fetch(`${base}/api/entities/ingredientes/bulk-delete`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -311,8 +311,8 @@ test('bulk delete rolls the whole selection back when any row has dependents', a
         async query(sql) {
             statements.push(sql);
             if (sql === 'BEGIN' || sql === 'ROLLBACK') return {rowCount: null, rows: []};
-            if (sql.includes('FOR UPDATE')) return {rowCount: 2, rows: [{cod_plato: 'EMP'}, {cod_plato: 'TAR'}]};
-            if (sql.startsWith('WITH matching')) return {rows: [{count: 1, keys: [{cod_plato: 'EMP', cod_ing: 'HAR'}]}]};
+            if (sql.includes('FOR UPDATE')) return {rowCount: 2, rows: [{nombre: 'EMP'}, {nombre: 'TAR'}]};
+            if (sql.startsWith('WITH matching')) return {rows: [{count: 1, keys: [{plato: 'EMP', ingrediente: 'HAR'}]}]};
             if (sql.startsWith('DELETE')) return {rowCount: 2, rows: []};
             throw new Error('Unexpected query in bulk-delete test');
         },
@@ -322,7 +322,7 @@ test('bulk delete rolls the whole selection back when any row has dependents', a
     const response = await fetch(`${base}/api/entities/platos/bulk-delete`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({keys: [{cod_plato: 'EMP'}, {cod_plato: 'TAR'}]}),
+        body: JSON.stringify({keys: [{nombre: 'EMP'}, {nombre: 'TAR'}]}),
     });
     assert.equal(response.status, 409);
     assert.match((await response.json()).error, /recetas \(plato\): 1/);
@@ -336,9 +336,9 @@ test('bulk delete removes all selected rows in one transaction when unreferenced
         async query(sql) {
             statements.push(sql);
             if (sql === 'BEGIN' || sql === 'COMMIT') return {rowCount: null, rows: []};
-            if (sql.includes('FOR UPDATE')) return {rowCount: 2, rows: [{cod_ing: 'HAR'}, {cod_ing: 'MAN'}]};
+            if (sql.includes('FOR UPDATE')) return {rowCount: 2, rows: [{nombre: 'HAR'}, {nombre: 'MAN'}]};
             if (sql.startsWith('WITH matching')) return {rows: [{count: 0, keys: []}]};
-            if (sql.startsWith('DELETE')) return {rowCount: 2, rows: [{cod_ing: 'HAR'}, {cod_ing: 'MAN'}]};
+            if (sql.startsWith('DELETE')) return {rowCount: 2, rows: [{nombre: 'HAR'}, {nombre: 'MAN'}]};
             throw new Error('Unexpected query in bulk-delete test');
         },
         release() {},
@@ -347,7 +347,7 @@ test('bulk delete removes all selected rows in one transaction when unreferenced
     const response = await fetch(`${base}/api/entities/ingredientes/bulk-delete`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({keys: [{cod_ing: 'HAR'}, {cod_ing: 'MAN'}]}),
+        body: JSON.stringify({keys: [{nombre: 'HAR'}, {nombre: 'MAN'}]}),
     });
     assert.equal(response.status, 204);
     assert.ok(statements.includes('COMMIT'));

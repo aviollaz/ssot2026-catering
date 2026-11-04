@@ -30,16 +30,16 @@ test('hybrid queries, concurrent saves and live events use the real database', {
             return response.json();
         };
         // The rows inserted by SQL below, as the API returns them.
-        const service = (i, descripcion) => ({cod_servicio: 'S' + String(i).padStart(3, '0'), nombre: `Servicio ${i}`,
+        const service = (i, descripcion) => ({nombre: 'S' + String(i).padStart(3, '0'),
             descripcion, precio_persona: i, min_personas: 1, activo: true});
         try {
             await t.test('200 rows are complete; 201 are bounded, with matching filter/sort/page semantics', async () => {
-                await pool.query(`INSERT INTO ssot.servicios (cod_servicio, nombre, precio_persona, min_personas, activo, descripcion) SELECT 'S' || lpad(i::text, 3, '0'), 'Servicio ' || i, i, 1, true, CASE i % 7 WHEN 0 THEN NULL WHEN 1 THEN 'Álgebra' WHEN 2 THEN 'álgebra' WHEN 3 THEN '100%_literal' WHEN 4 THEN '' WHEN 5 THEN '😀' ELSE 'Zulu' END FROM generate_series(1,200) i`);
+                await pool.query(`INSERT INTO ssot.servicios (tenant, nombre, precio_persona, min_personas, activo, descripcion) SELECT 'default', 'S' || lpad(i::text, 3, '0'), i, 1, true, CASE i % 7 WHEN 0 THEN NULL WHEN 1 THEN 'Álgebra' WHEN 2 THEN 'álgebra' WHEN 3 THEN '100%_literal' WHEN 4 THEN '' WHEN 5 THEN '😀' ELSE 'Zulu' END FROM generate_series(1,200) i`);
                 const small = await read('servicios');
                 assert.equal(small.window.kind, 'complete');
                 assert.equal(small.rows.length, 200);
                 assert.equal(small.versions.length, 200);
-                await pool.query("INSERT INTO ssot.servicios (cod_servicio, nombre, descripcion, precio_persona, min_personas, activo) VALUES ('S201', 'Servicio 201', 'last', 201, 1, true)");
+                await pool.query("INSERT INTO ssot.servicios (tenant, nombre, descripcion, precio_persona, min_personas, activo) VALUES ('default', 'S201', 'last', 201, 1, true)");
                 const first = await read('servicios');
                 assert.deepEqual(first.window, {kind: 'page', total: 201, matched: 201, page: 1});
                 assert.equal(first.rows.length, 10);
@@ -52,7 +52,7 @@ test('hybrid queries, concurrent saves and live events use the real database', {
                     assert.equal(actual.window.matched, expected.matched);
                     assert.equal(actual.window.page, expected.page);
                 }
-                await pool.query("DELETE FROM ssot.servicios WHERE cod_servicio = 'S201'");
+                await pool.query("DELETE FROM ssot.servicios WHERE nombre = 'S201'");
                 assert.equal((await read('servicios')).window.kind, 'complete');
             });
             await t.test('unknown/private fields, wrong filter types and unsafe pagination are rejected', async () => {
@@ -66,7 +66,7 @@ test('hybrid queries, concurrent saves and live events use the real database', {
                 assert.equal((await request('/api/entities/usuarios', 'POST', {usuario: 'writer', contrasena: 'integration-writer-password'})).status, 204);
                 const writer = (await pool.query("SELECT id, usuario, version_sesion FROM ssot.usuarios WHERE usuario='writer'")).rows[0];
                 const writerToken = (await auth.issueToken(writer)).token;
-                const key = {cod_servicio: 'S001'}, version = versionOf(await read('servicios'), key);
+                const key = {nombre: 'S001'}, version = versionOf(await read('servicios'), key);
                 const responses = await Promise.all([token, writerToken].map((jwt, i) => request('/api/entities/servicios', 'PUT', {key, version, row: service(1, `writer ${i}`)}, undefined, jwt)));
                 assert.deepEqual(responses.map(response => response.status).sort(), [204, 409]);
                 const current = await read('servicios');

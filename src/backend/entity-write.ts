@@ -1,4 +1,4 @@
-import {randomUUID} from 'node:crypto';
+import {randomInt, randomUUID} from 'node:crypto';
 import type {Pool} from 'pg';
 import {instanceProblems, validateInstance, type EntityInfo} from 'system-definition';
 import {quotePgIdentifier as quote} from '@system-definition/postgres-migrations';
@@ -8,8 +8,20 @@ import {ApiFailure, readObject} from './api-errors.js';
 import {allowedFields} from './column-security.js';
 import {hashPassword, readPassword, readUsername} from './credentials.js';
 import {localDateTime} from './value-types.js';
+import {currentTenant} from './tenant.js';
 
 export const entityTable = (name: string): string => `${quote(databaseSettings.database.schema)}.${quote(name)}`;
+
+/* Short codes such as K7PQ-4XMZ for orders and movements: easy to read and dictate (no 0/O or 1/I),
+   and random enough (32^8, about 10^12) that a customer cannot guess another customer's order. */
+const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+export const codigoPattern = new RegExp(`^[${alphabet}]{4}-[${alphabet}]{4}$`);
+export function codigo(): string {
+    const part = () => Array.from({length: 4}, () => alphabet[randomInt(alphabet.length)]).join('');
+    return `${part()}-${part()}`;
+}
+
+const generators = {uuid: randomUUID, codigo, tenant: currentTenant, now: localDateTime, 'empty-array': () => '[]'};
 
 export async function prepareEntityWrite(entity: EntityInfo<typeof myContext>, body: unknown, operation: 'create' | 'update'): Promise<Record<string, unknown>> {
     const fields = Object.values(allowedFields(entity, 'write'));
@@ -30,7 +42,7 @@ export async function prepareEntityWrite(entity: EntityInfo<typeof myContext>, b
     const passwordChanged = supplied.some(field => field.transform === 'password');
     for (const field of Object.values(entity.fields)) {
         const generated = operation === 'create' ? field.onCreate : field.onUpdate;
-        if (generated !== null) row[field.name] = generated === 'uuid' ? randomUUID() : generated === 'now' ? localDateTime() : '[]';
+        if (generated !== null) row[field.name] = generators[generated]();
         if (passwordChanged && field.onPasswordChange === 'empty-array') row[field.name] = '[]';
     }
     return row;

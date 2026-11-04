@@ -12,6 +12,7 @@ import {ApiFailure, apiErrorHandler, readObject} from './api-errors.js';
 import type {Authentication} from './auth.js';
 import {allowedFields} from './column-security.js';
 import {entityTable, insertPreparedRow, prepareEntityWrite} from './entity-write.js';
+import {referencePairs, withoutTenant} from './tenant.js';
 
 function readRow(fields: EntityInfo<typeof myContext>['fields'], value: unknown): Record<string, unknown> {
     const row = readObject(value, Object.keys(fields));
@@ -43,7 +44,9 @@ export function registerEntityApi(app: Express, pool: Pick<Pool, 'query' | 'conn
         const writable = allowedFields(entity, 'write');
         const readNames = Object.keys(readable);
         const table = entityTable(entity.name);
-        const keys = Object.fromEntries(entity.pk.map(name => [name, entity.fields[name]!]));
+        // The browser identifies rows without the company: the database only shows the user's company anyway.
+        const pk = withoutTenant(entity.pk);
+        const keys = Object.fromEntries(pk.map(name => [name, entity.fields[name]!]));
         const columns = Object.values(readable).filter(field => field.visible)
             .map(({name, label, type, nullable, writable}) => ({name, label, type, nullable, writable, constraints: inputConstraints[type]}));
         const inputs = Object.values(writable).map(({inputName: name, inputType: type, inputConstraints: constraints, label, nullable, transform}) => ({
@@ -52,8 +55,8 @@ export function registerEntityApi(app: Express, pool: Pick<Pool, 'query' | 'conn
         const foreignKeys = Object.entries(entity.fks).flatMap(([name, fk]) => {
             const target = entities.get(fk.entity as EntityName)!;
             const targetReadable = allowedFields(target, 'read');
-            const pairs = Object.entries(fk.fields);
-            if (!pairs.every(([source, destination]) => writable[source] && targetReadable[destination])) return [];
+            const pairs = referencePairs(fk.fields);
+            if (!pairs.length || !pairs.every(([source, destination]) => writable[source] && targetReadable[destination])) return [];
             return [{name, entity: target.name,
                 fields: Object.fromEntries(pairs.map(([source, destination]) => [writable[source]!.inputName, destination])),
                 displayFields: [...new Set([...pairs.map(([, destination]) => destination),
@@ -62,9 +65,9 @@ export function registerEntityApi(app: Express, pool: Pick<Pool, 'query' | 'conn
         });
         const keyValues = (key: unknown) => {
             const row = readRow(keys, key);
-            return entity.pk.map(name => row[name]);
+            return pk.map(name => row[name]);
         };
-        const where = (offset = 0) => entity.pk.map((name, i) => `${quote(name)} = $${offset + i + 1}`).join(' AND ');
+        const where = (offset = 0) => pk.map((name, i) => `${quote(name)} = $${offset + i + 1}`).join(' AND ');
         const readKeys = (value: unknown): unknown[][] => {
             const body = readObject(value, ['keys']);
             if (!Array.isArray(body['keys']) || body['keys'].length === 0 || body['keys'].length > browsing.bulkDeleteLimit) {
@@ -77,8 +80,8 @@ export function registerEntityApi(app: Express, pool: Pick<Pool, 'query' | 'conn
             return parsed;
         };
         const whereKeys = (rows: readonly unknown[][], alias = '') => rows.map((_, rowIndex) =>
-            `(${entity.pk.map((name, columnIndex) =>
-                `${alias}${quote(name)} = $${rowIndex * entity.pk.length + columnIndex + 1}`).join(' AND ')})`
+            `(${pk.map((name, columnIndex) =>
+                `${alias}${quote(name)} = $${rowIndex * pk.length + columnIndex + 1}`).join(' AND ')})`
         ).join(' OR ');
         const dependencyBlockers = async (
             rows: readonly unknown[][],
@@ -92,8 +95,8 @@ export function registerEntityApi(app: Express, pool: Pick<Pool, 'query' | 'conn
                     const pairs = Object.entries(foreignKey.fields);
                     const join = pairs.map(([source, target]) =>
                         `dependent.${quote(source)} = target.${quote(target)}`).join(' AND ');
-                    const dependentKeys = dependent.pk.map(name => `dependent.${quote(name)}`).join(', ');
-                    const keyOrder = dependent.pk.map(quote).join(', ');
+                    const dependentKeys = withoutTenant(dependent.pk).map(name => `dependent.${quote(name)}`).join(', ');
+                    const keyOrder = withoutTenant(dependent.pk).map(quote).join(', ');
                     const result = await executor.query<{count: number | string; keys: Record<string, unknown>[]}>(
                         `WITH matching AS (` +
                         `SELECT DISTINCT ${dependentKeys} FROM ${entityTable(dependent.name)} AS dependent ` +
@@ -132,8 +135,8 @@ export function registerEntityApi(app: Express, pool: Pick<Pool, 'query' | 'conn
                 await client.query('BEGIN');
                 transactionStarted = true;
                 const selected = await client.query(
-                    `SELECT ${entity.pk.map(quote).join(', ')} FROM ${table} WHERE ${whereKeys(rows)} ` +
-                    `ORDER BY ${entity.pk.map(quote).join(', ')} FOR UPDATE`,
+                    `SELECT ${pk.map(quote).join(', ')} FROM ${table} WHERE ${whereKeys(rows)} ` +
+                    `ORDER BY ${pk.map(quote).join(', ')} FOR UPDATE`,
                     rows.flat(),
                 );
                 if (selected.rowCount !== rows.length) throw new ApiFailure(404, 'Una o más filas seleccionadas ya no existen.');
@@ -144,7 +147,7 @@ export function registerEntityApi(app: Express, pool: Pick<Pool, 'query' | 'conn
                     throw new ApiFailure(409, `No se puede borrar la selección: hay filas dependientes en ${details}.`);
                 }
                 const deleted = await client.query(
-                    `DELETE FROM ${table} WHERE ${whereKeys(rows)} RETURNING ${entity.pk.map(quote).join(', ')}`,
+                    `DELETE FROM ${table} WHERE ${whereKeys(rows)} RETURNING ${pk.map(quote).join(', ')}`,
                     rows.flat(),
                 );
                 if (deleted.rowCount !== rows.length) throw new ApiFailure(404, 'Una o más filas seleccionadas ya no existen.');
@@ -167,7 +170,7 @@ export function registerEntityApi(app: Express, pool: Pick<Pool, 'query' | 'conn
                     if (typeof parameters['query'] !== 'string') throw new ApiFailure(400, 'Consulta inválida.');
                     try { input = JSON.parse(parameters['query']); } catch { throw new ApiFailure(400, 'Consulta inválida.'); }
                 }
-                const result = await queryEntity(pool, entity.name, readable, entity.pk, readQuery(input, readable));
+                const result = await queryEntity(pool, entity.name, readable, pk, readQuery(input, readable));
                 const rows = result.rows.map(row => {
                     const projected = Object.fromEntries(readNames.map(name => [name, row[name]]));
                     if (readNames.some(name => !Object.hasOwn(row, name)) || instanceProblems(myContext, readable, projected).length) {
@@ -175,7 +178,7 @@ export function registerEntityApi(app: Express, pool: Pick<Pool, 'query' | 'conn
                     }
                     return projected;
                 });
-                res.json({name: entity.name, label: entityLabels[definition.name], browsing, readOnly, children, pk: entity.pk, columns, inputs, foreignKeys,
+                res.json({name: entity.name, label: entityLabels[definition.name], browsing, readOnly, children, pk, columns, inputs, foreignKeys,
                     ...result, rows} as EntityResponse);
             })
             .post(async (req, res) => {

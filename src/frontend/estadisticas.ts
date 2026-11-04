@@ -34,7 +34,7 @@ async function render(view: HTMLElement): Promise<void> {
         seccion('Facturación por mes', tabla(['Mes', 'Pedidos', 'Facturación', 'Personas'],
             datos.porMes.map(m => [mesLargo(m.mes), m.pedidos, pesos(m.facturacion), m.personas]))),
         seccion('Platos más pedidos', tabla(['Plato', 'Porciones', 'Pedidos'],
-            datos.platosMasPedidos.map(p => [p.nombre, p.porciones, p.pedidos]))));
+            datos.platosMasPedidos.map(p => [p.plato, p.porciones, p.pedidos]))));
 }
 
 async function show(content: HTMLElement): Promise<(changed: string | null) => void> {

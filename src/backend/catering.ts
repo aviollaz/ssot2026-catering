@@ -6,16 +6,19 @@ import {myContext, myEntities} from './system.js';
 import type {EntityName, StoredRow} from './api-contract.js';
 import {ApiFailure, apiErrorHandler, readObject} from './api-errors.js';
 import {authenticationLimit, type Authentication} from './auth.js';
-import {entityTable, insertPreparedRow, prepareEntityWrite} from './entity-write.js';
+import {codigoPattern, entityTable, insertPreparedRow, prepareEntityWrite} from './entity-write.js';
 import {cateringConfig} from './catering-config.js';
 import {datosDeContacto, exportables, exportarTablas} from './exportar.js';
 import {localDateTime} from './value-types.js';
+import {runAsTenant, type Db} from './tenant.js';
 import type {CatalogoResponse, ComprasResponse, EgresoSugerido, EstadisticasResponse, EstadoPedidoResponse, MovimientoResponse,
     ExportablesResponse, MovimientoResumen, NuevoPedidoResponse, OpcionesInventario, PedidoPendiente, TipoMovimiento, Unidad} from './catering-contract.js';
 
-type Db = Pick<Pool, 'query' | 'connect'>;
+/* Every query here sees only the rows of the request's company (row-level security, tenant.ts), so the SQL
+   is written as if there were a single company. Dishes, ingredients, units and services are named by `nombre`. */
 type EstadoPedido = StoredRow<'pedidos'>['estado'];
 const T = {
+    empresas: entityTable('empresas'),
     ingredientes: entityTable('ingredientes'), unidades: entityTable('unidades'), platos: entityTable('platos'), recetas: entityTable('recetas'),
     servicios: entityTable('servicios'), servicio_platos: entityTable('servicio_platos'),
     pedidos: entityTable('pedidos'), pedido_platos: entityTable('pedido_platos'),
@@ -27,7 +30,6 @@ const pedidoPlatos = completeEntity(myContext, myEntities.pedido_platos);
 const movimientos = completeEntity(myContext, myEntities.movimientos);
 const movimientoPlatos = completeEntity(myContext, myEntities.movimiento_platos);
 const movimientoIngredientes = completeEntity(myContext, myEntities.movimiento_ingredientes);
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 // With `confirmar` false the work runs and is rolled back, to preview its result.
 async function enTransaccion<T>(db: Db, work: (client: PoolClient) => Promise<T>, confirmar = true): Promise<T> {
@@ -44,18 +46,18 @@ async function enTransaccion<T>(db: Db, work: (client: PoolClient) => Promise<T>
 }
 
 const unidades = async (db: Pick<Pool, 'query'>): Promise<Unidad[]> =>
-    (await db.query<Unidad>(`SELECT cod_unidad, nombre, base, factor FROM ${T.unidades} ORDER BY base, factor, nombre`)).rows;
+    (await db.query<Unidad>(`SELECT nombre, base, factor FROM ${T.unidades} ORDER BY base, factor, nombre`)).rows;
 
 // Ingredient need of each order: portions × recipe quantity / portions the recipe yields.
 const necesidadSql = (condicion: string) => `
-    SELECT pe.id AS pedido, pe.fecha_evento, r.cod_ing,
+    SELECT pe.id AS pedido, pe.fecha_evento, r.ingrediente,
            SUM(pp.porciones * r.cantidad::numeric / pl.porciones_receta) AS necesidad
     FROM ${T.pedidos} pe
     JOIN ${T.pedido_platos} pp ON pp.pedido = pe.id
-    JOIN ${T.platos} pl ON pl.cod_plato = pp.cod_plato
-    JOIN ${T.recetas} r ON r.cod_plato = pp.cod_plato
+    JOIN ${T.platos} pl ON pl.nombre = pp.plato
+    JOIN ${T.recetas} r ON r.plato = pp.plato
     WHERE ${condicion}
-    GROUP BY pe.id, pe.fecha_evento, r.cod_ing`;
+    GROUP BY pe.id, pe.fecha_evento, r.ingrediente`;
 
 /* Stock goes first to the earliest confirmed orders. With acum = the need of this order plus all
    earlier ones, the order buys only its own shortfall: max(0, acum − stock) − max(0, previous − stock).
@@ -66,16 +68,16 @@ export async function comprasDePedido(db: Pick<Pool, 'query'>, id: string): Prom
     const {rows} = await db.query(`
         WITH necesidad AS (${necesidadSql(`pe.estado = 'Confirmado' OR pe.id = $1`)}),
         acumulado AS (
-            SELECT *, SUM(necesidad) OVER (PARTITION BY cod_ing ORDER BY fecha_evento, pedido) AS acum FROM necesidad
+            SELECT *, SUM(necesidad) OVER (PARTITION BY ingrediente ORDER BY fecha_evento, pedido) AS acum FROM necesidad
         )
-        SELECT i.cod_ing, i.nombre, i.unidad, i.unidad_compra, i.stock_actual AS stock,
+        SELECT i.nombre, i.unidad, i.unidad_compra, i.stock_actual AS stock,
                CEIL(a.necesidad)::int AS necesidad,
                CEIL(a.acum - a.necesidad)::int AS consumo_previo,
                CEIL(GREATEST(0, a.acum - i.stock_actual))::int AS faltante,
                CEIL(GREATEST(0, a.acum - i.stock_actual) - GREATEST(0, a.acum - a.necesidad - i.stock_actual))::int AS comprar
-        FROM acumulado a JOIN ${T.ingredientes} i ON i.cod_ing = a.cod_ing
+        FROM acumulado a JOIN ${T.ingredientes} i ON i.nombre = a.ingrediente
         WHERE a.pedido = $1
-        ORDER BY i.nombre, i.cod_ing`, [id]);
+        ORDER BY i.nombre`, [id]);
     return {ingredientes: rows, unidades: await unidades(db)};
 }
 
@@ -84,19 +86,19 @@ export async function comprasDePeriodo(db: Pick<Pool, 'query'>, desde: string, h
     const {rows} = await db.query(`
         WITH necesidad AS (${necesidadSql(`pe.estado = 'Confirmado' AND pe.fecha_evento < $2::date + 1`)}),
         por_ingrediente AS (
-            SELECT cod_ing,
+            SELECT ingrediente,
                    COALESCE(SUM(necesidad) FILTER (WHERE fecha_evento < $1::date), 0) AS previo,
                    COALESCE(SUM(necesidad) FILTER (WHERE fecha_evento >= $1::date), 0) AS periodo
-            FROM necesidad GROUP BY cod_ing
+            FROM necesidad GROUP BY ingrediente
         )
-        SELECT i.cod_ing, i.nombre, i.unidad, i.unidad_compra, i.stock_actual AS stock,
+        SELECT i.nombre, i.unidad, i.unidad_compra, i.stock_actual AS stock,
                CEIL(n.periodo)::int AS necesidad,
                CEIL(n.previo)::int AS consumo_previo,
                CEIL(GREATEST(0, n.previo + n.periodo - i.stock_actual))::int AS faltante,
                CEIL(GREATEST(0, n.previo + n.periodo - i.stock_actual) - GREATEST(0, n.previo - i.stock_actual))::int AS comprar
-        FROM por_ingrediente n JOIN ${T.ingredientes} i ON i.cod_ing = n.cod_ing
+        FROM por_ingrediente n JOIN ${T.ingredientes} i ON i.nombre = n.ingrediente
         WHERE n.periodo > 0
-        ORDER BY i.nombre, i.cod_ing`, [desde, hasta]);
+        ORDER BY i.nombre`, [desde, hasta]);
     return {ingredientes: rows, unidades: await unidades(db)};
 }
 
@@ -106,7 +108,7 @@ async function bloquearPedido(client: PoolClient, id: unknown, estado: EstadoPed
     if (rows[0].estado !== estado) throw new ApiFailure(409, error);
 }
 
-type LineaStock = {cod_ing: string; cantidad: number};
+type LineaStock = {ingrediente: string; cantidad: number};
 
 /* Applies signed stock changes, or for an Ajuste the counted stock, and records in the ledger what actually
    changed. Stock never goes below 0, so the ledger of an ingredient always adds up to its stock. */
@@ -114,11 +116,11 @@ async function aplicarStock(client: PoolClient, movimiento: string, lineas: read
     const {rows} = await client.query<LineaStock>(`
         UPDATE ${T.ingredientes} i
         SET stock_actual = CASE WHEN $2 THEN l.cantidad ELSE GREATEST(0, i.stock_actual + l.cantidad) END
-        FROM jsonb_to_recordset($1::jsonb) AS l(cod_ing text, cantidad int)
-        WHERE i.cod_ing = l.cod_ing
-        RETURNING i.cod_ing, new.stock_actual - old.stock_actual AS cantidad`, [JSON.stringify(lineas), contado]);
+        FROM jsonb_to_recordset($1::jsonb) AS l(ingrediente text, cantidad int)
+        WHERE i.nombre = l.ingrediente
+        RETURNING i.nombre AS ingrediente, new.stock_actual - old.stock_actual AS cantidad`, [JSON.stringify(lineas), contado]);
     if (rows.length !== lineas.length) throw new ApiFailure(400, 'Uno de los ingredientes no existe.');
-    const cambios = rows.filter(row => row.cantidad !== 0).sort((a, b) => a.cod_ing.localeCompare(b.cod_ing));
+    const cambios = rows.filter(row => row.cantidad !== 0).sort((a, b) => a.ingrediente.localeCompare(b.ingrediente));
     for (const linea of cambios) {
         await insertPreparedRow(client, movimientoIngredientes, await prepareEntityWrite(movimientoIngredientes, {movimiento, ...linea}, 'create'));
     }
@@ -139,25 +141,25 @@ function readLineas(value: unknown, required: string[], optional: string[] = [])
 
 // Ingreso adds, Merma subtracts, Ajuste is the counted stock; each in any unit of the ingredient's base.
 async function lineasIngredientes(client: PoolClient, tipo: TipoMovimiento, value: unknown): Promise<LineaStock[]> {
-    const items = readLineas(value, ['cod_ing', 'cantidad'], ['cod_unidad']);
-    const {rows: bases} = await client.query<{cod_ing: string; unidad: string}>(
-        `SELECT cod_ing, unidad FROM ${T.ingredientes} WHERE cod_ing = ANY($1::text[])`, [items.map(item => item['cod_ing'])]);
+    const items = readLineas(value, ['ingrediente', 'cantidad'], ['unidad']);
+    const {rows: bases} = await client.query<{nombre: string; unidad: string}>(
+        `SELECT nombre, unidad FROM ${T.ingredientes} WHERE nombre = ANY($1::text[])`, [items.map(item => item['ingrediente'])]);
     const {rows: unidades} = await client.query<Unidad>(
-        `SELECT cod_unidad, nombre, base, factor FROM ${T.unidades} WHERE cod_unidad = ANY($1::text[])`, [items.map(item => item['cod_unidad'] ?? null)]);
+        `SELECT nombre, base, factor FROM ${T.unidades} WHERE nombre = ANY($1::text[])`, [items.map(item => item['unidad'] ?? null)]);
     return items.map(item => {
-        const base = bases.find(row => row.cod_ing === item['cod_ing']);
-        if (!base) throw new ApiFailure(400, `El ingrediente ${String(item['cod_ing'])} no existe.`);
+        const base = bases.find(row => row.nombre === item['ingrediente']);
+        if (!base) throw new ApiFailure(400, `El ingrediente ${String(item['ingrediente'])} no existe.`);
         const cantidad = item['cantidad'];
         if (typeof cantidad !== 'number' || !Number.isFinite(cantidad) || cantidad < 0 || (tipo !== 'Ajuste' && cantidad === 0)) {
             throw new ApiFailure(400, tipo === 'Ajuste' ? 'El stock contado no puede ser negativo.' : 'Las cantidades tienen que ser mayores que 0.');
         }
-        const codigo = item['cod_unidad'] ?? base.unidad;
-        const unidad = codigo === base.unidad ? {base: base.unidad, factor: 1} : unidades.find(row => row.cod_unidad === codigo);
+        const nombre = item['unidad'] ?? base.unidad;
+        const unidad = nombre === base.unidad ? {base: base.unidad, factor: 1} : unidades.find(row => row.nombre === nombre);
         if (!unidad || unidad.base !== base.unidad) {
-            throw new ApiFailure(400, `La unidad ${String(codigo)} no sirve para ${base.cod_ing}, que se mide en ${base.unidad}.`);
+            throw new ApiFailure(400, `La unidad ${String(nombre)} no sirve para ${base.nombre}, que se mide en ${base.unidad}.`);
         }
         const enBase = Math.round(cantidad * unidad.factor);
-        return {cod_ing: base.cod_ing, cantidad: tipo === 'Merma' ? -enBase : enBase};
+        return {ingrediente: base.nombre, cantidad: tipo === 'Merma' ? -enBase : enBase};
     });
 }
 
@@ -183,21 +185,21 @@ export async function registrarMovimiento(db: Db, body: unknown, {simular = fals
         await insertPreparedRow(client, movimientos, movimiento);
         let lineas: LineaStock[];
         if (egreso) {
-            const platos = readLineas(input['platos'], ['cod_plato', 'porciones']);
-            const {rows: existentes} = await client.query<{cod_plato: string}>(
-                `SELECT cod_plato FROM ${T.platos} WHERE cod_plato = ANY($1::text[])`, [platos.map(plato => plato['cod_plato'])]);
+            const platos = readLineas(input['platos'], ['plato', 'porciones']);
+            const {rows: existentes} = await client.query<{nombre: string}>(
+                `SELECT nombre FROM ${T.platos} WHERE nombre = ANY($1::text[])`, [platos.map(plato => plato['plato'])]);
             for (const plato of platos) {
-                if (!existentes.some(row => row.cod_plato === plato['cod_plato'])) throw new ApiFailure(400, `El plato ${String(plato['cod_plato'])} no existe.`);
+                if (!existentes.some(row => row.nombre === plato['plato'])) throw new ApiFailure(400, `El plato ${String(plato['plato'])} no existe.`);
                 await insertPreparedRow(client, movimientoPlatos, await prepareEntityWrite(movimientoPlatos, {movimiento: id, ...plato}, 'create'));
             }
             // The same need as the purchases: portions × recipe quantity / portions the recipe yields.
             lineas = (await client.query<LineaStock>(`
-                SELECT r.cod_ing, -CEIL(SUM(mp.porciones * r.cantidad::numeric / pl.porciones_receta))::int AS cantidad
+                SELECT r.ingrediente, -CEIL(SUM(mp.porciones * r.cantidad::numeric / pl.porciones_receta))::int AS cantidad
                 FROM ${T.movimiento_platos} mp
-                JOIN ${T.platos} pl ON pl.cod_plato = mp.cod_plato
-                JOIN ${T.recetas} r ON r.cod_plato = mp.cod_plato
+                JOIN ${T.platos} pl ON pl.nombre = mp.plato
+                JOIN ${T.recetas} r ON r.plato = mp.plato
                 WHERE mp.movimiento = $1
-                GROUP BY r.cod_ing`, [id])).rows;
+                GROUP BY r.ingrediente`, [id])).rows;
         } else lineas = await lineasIngredientes(client, tipo, input['ingredientes']);
         const ingredientes = await aplicarStock(client, id, lineas, tipo === 'Ajuste');
         if (movimiento['pedido'] !== null) await client.query(`UPDATE ${T.pedidos} SET estado = 'Entregado' WHERE id = $1`, [movimiento['pedido']]);
@@ -221,7 +223,7 @@ export async function anularMovimiento(db: Db, id: string): Promise<MovimientoRe
             facturado: null, anula: id, observaciones: null}, 'create');
         await insertPreparedRow(client, movimientos, anulacion);
         const lineas = (await client.query<LineaStock>(
-            `SELECT cod_ing, -cantidad AS cantidad FROM ${T.movimiento_ingredientes} WHERE movimiento = $1`, [id])).rows;
+            `SELECT ingrediente, -cantidad AS cantidad FROM ${T.movimiento_ingredientes} WHERE movimiento = $1`, [id])).rows;
         const ingredientes = await aplicarStock(client, anulacion['id'] as string, lineas, false);
         if (original.pedido !== null) await client.query(`UPDATE ${T.pedidos} SET estado = 'Confirmado' WHERE id = $1`, [original.pedido]);
         return {id: anulacion['id'] as string, ingredientes};
@@ -232,10 +234,10 @@ export async function opcionesInventario(db: Pick<Pool, 'query'>): Promise<Opcio
     return {
         pedidos: (await db.query<PedidoPendiente>(`SELECT id, cliente_nombre, fecha_evento, personas, estado FROM ${T.pedidos}
             WHERE estado = 'Confirmado' ORDER BY fecha_evento, id`)).rows,
-        platos: (await db.query(`SELECT cod_plato, nombre FROM ${T.platos} ORDER BY nombre, cod_plato`)).rows,
-        ingredientes: (await db.query(`SELECT i.cod_ing, i.nombre, i.unidad, i.stock_actual, i.unidad_compra,
-                COALESCE((SELECT SUM(mi.cantidad) FROM ${T.movimiento_ingredientes} mi WHERE mi.cod_ing = i.cod_ing), 0)::int AS historial
-            FROM ${T.ingredientes} i ORDER BY i.nombre, i.cod_ing`)).rows,
+        platos: (await db.query(`SELECT nombre FROM ${T.platos} ORDER BY nombre`)).rows,
+        ingredientes: (await db.query(`SELECT i.nombre, i.unidad, i.stock_actual, i.unidad_compra,
+                COALESCE((SELECT SUM(mi.cantidad) FROM ${T.movimiento_ingredientes} mi WHERE mi.ingrediente = i.nombre), 0)::int AS historial
+            FROM ${T.ingredientes} i ORDER BY i.nombre`)).rows,
         unidades: await unidades(db),
     };
 }
@@ -245,8 +247,7 @@ export async function egresoSugerido(db: Pick<Pool, 'query'>, id: string): Promi
     const {rows: [pedido]} = await db.query<{total: number}>(`SELECT total FROM ${T.pedidos} WHERE id = $1`, [id]);
     if (!pedido) throw new ApiFailure(404, 'El pedido no existe.');
     const {rows} = await db.query<EgresoSugerido['platos'][number]>(`
-        SELECT pp.cod_plato, pl.nombre, pp.porciones FROM ${T.pedido_platos} pp JOIN ${T.platos} pl ON pl.cod_plato = pp.cod_plato
-        WHERE pp.pedido = $1 ORDER BY pl.nombre, pp.cod_plato`, [id]);
+        SELECT plato, porciones FROM ${T.pedido_platos} WHERE pedido = $1 ORDER BY plato`, [id]);
     return {platos: rows, facturado: pedido.total};
 }
 
@@ -255,10 +256,10 @@ export async function historialMovimientos(db: Pick<Pool, 'query'>, limite = 50)
     return (await db.query<MovimientoResumen>(`
         SELECT m.id, m.fecha, m.tipo, m.pedido, m.facturado, m.anula, m.observaciones, pe.cliente_nombre,
                EXISTS (SELECT 1 FROM ${T.movimientos} a WHERE a.anula = m.id) AS anulado,
-               COALESCE((SELECT json_agg(json_build_object('nombre', pl.nombre, 'porciones', mp.porciones) ORDER BY pl.nombre)
-                   FROM ${T.movimiento_platos} mp JOIN ${T.platos} pl ON pl.cod_plato = mp.cod_plato WHERE mp.movimiento = m.id), '[]') AS platos,
+               COALESCE((SELECT json_agg(json_build_object('nombre', mp.plato, 'porciones', mp.porciones) ORDER BY mp.plato)
+                   FROM ${T.movimiento_platos} mp WHERE mp.movimiento = m.id), '[]') AS platos,
                COALESCE((SELECT json_agg(json_build_object('nombre', i.nombre, 'unidad', i.unidad, 'cantidad', mi.cantidad) ORDER BY i.nombre)
-                   FROM ${T.movimiento_ingredientes} mi JOIN ${T.ingredientes} i ON i.cod_ing = mi.cod_ing WHERE mi.movimiento = m.id), '[]') AS ingredientes
+                   FROM ${T.movimiento_ingredientes} mi JOIN ${T.ingredientes} i ON i.nombre = mi.ingrediente WHERE mi.movimiento = m.id), '[]') AS ingredientes
         FROM ${T.movimientos} m LEFT JOIN ${T.pedidos} pe ON pe.id = m.pedido
         ORDER BY m.fecha DESC, m.id
         LIMIT $1`, [limite])).rows;
@@ -285,50 +286,50 @@ export async function estadisticas(db: Pick<Pool, 'query'>): Promise<Estadistica
         WHERE estado IN ('Confirmado', 'Entregado')
         GROUP BY mes ORDER BY mes`);
     const platos = await db.query(`
-        SELECT pl.cod_plato, pl.nombre, SUM(pp.porciones)::int AS porciones, count(*)::int AS pedidos
+        SELECT pp.plato, SUM(pp.porciones)::int AS porciones, count(*)::int AS pedidos
         FROM ${T.pedido_platos} pp
         JOIN ${T.pedidos} pe ON pe.id = pp.pedido
-        JOIN ${T.platos} pl ON pl.cod_plato = pp.cod_plato
         WHERE pe.estado <> 'Cancelado'
-        GROUP BY pl.cod_plato, pl.nombre
-        ORDER BY porciones DESC, pl.nombre
+        GROUP BY pp.plato
+        ORDER BY porciones DESC, pp.plato
         LIMIT 10`);
     return {porEstado: porEstado.rows, porMes: porMes.rows, platosMasPedidos: platos.rows};
 }
 
 export async function catalogo(db: Pick<Pool, 'query'>): Promise<CatalogoResponse> {
+    const {rows: [empresa]} = await db.query<{nombre: string}>(`SELECT nombre FROM ${T.empresas}`);
+    if (!empresa) throw new ApiFailure(404, 'La empresa no existe.');
     const platos = await db.query(`
-        SELECT cod_plato, nombre, descripcion, categoria, precio_porcion FROM ${T.platos}
-        WHERE activo ORDER BY nombre, cod_plato`);
+        SELECT nombre, descripcion, categoria, precio_porcion FROM ${T.platos}
+        WHERE activo ORDER BY nombre`);
     const servicios = await db.query(`
-        SELECT s.cod_servicio, s.nombre, s.descripcion, s.precio_persona, s.min_personas,
-               COALESCE(json_agg(json_build_object('cod_plato', p.cod_plato, 'nombre', p.nombre,
-                   'porciones_por_persona', sp.porciones_por_persona) ORDER BY p.nombre)
-                   FILTER (WHERE p.cod_plato IS NOT NULL), '[]') AS platos
+        SELECT s.nombre, s.descripcion, s.precio_persona, s.min_personas,
+               COALESCE(json_agg(json_build_object('plato', p.nombre, 'porciones_por_persona', sp.porciones_por_persona) ORDER BY p.nombre)
+                   FILTER (WHERE p.nombre IS NOT NULL), '[]') AS platos
         FROM ${T.servicios} s
-        LEFT JOIN ${T.servicio_platos} sp ON sp.cod_servicio = s.cod_servicio
-        LEFT JOIN ${T.platos} p ON p.cod_plato = sp.cod_plato AND p.activo
+        LEFT JOIN ${T.servicio_platos} sp ON sp.servicio = s.nombre
+        LEFT JOIN ${T.platos} p ON p.nombre = sp.plato AND p.activo
         WHERE s.activo
-        GROUP BY s.cod_servicio
+        GROUP BY s.nombre, s.descripcion, s.precio_persona, s.min_personas
         ORDER BY s.precio_persona, s.nombre`);
-    return {platos: platos.rows, servicios: servicios.rows, anticipacionDias: cateringConfig.anticipacionDias};
+    return {empresa: empresa.nombre, platos: platos.rows, servicios: servicios.rows, anticipacionDias: cateringConfig.anticipacionDias};
 }
 
-type Linea = {cod_plato: string; porciones: number; precio_porcion: number};
+type Linea = {plato: string; porciones: number; precio_porcion: number};
 
 /* Creates an order and its dishes in one transaction, validated by the SSOT. The total always comes
    from the server's prices. A service copies its dishes (personas × porciones_por_persona) and is
    charged per person; an à la carte order is charged per portion. */
 export async function crearPedido(db: Db, body: unknown, opciones: {estado?: EstadoPedido; ahora?: Date | null} = {}): Promise<NuevoPedidoResponse> {
     const cliente = ['cliente_nombre', 'cliente_email', 'cliente_telefono', 'direccion', 'fecha_evento', 'personas'];
-    const input = readObject(body, cliente, ['observaciones', 'cod_servicio', 'platos']);
-    if (Object.hasOwn(input, 'cod_servicio') === Object.hasOwn(input, 'platos')) {
+    const input = readObject(body, cliente, ['observaciones', 'servicio', 'platos']);
+    if (Object.hasOwn(input, 'servicio') === Object.hasOwn(input, 'platos')) {
         throw new ApiFailure(400, 'Elegí un servicio o armá el pedido plato por plato.');
     }
     const pedido = await prepareEntityWrite(pedidos, {
         ...Object.fromEntries(cliente.map(name => [name, input[name]])),
         observaciones: input['observaciones'] ?? null,
-        cod_servicio: input['cod_servicio'] ?? null,
+        servicio: input['servicio'] ?? null,
         estado: opciones.estado ?? 'Pendiente',
         total: 1, // validated as a placeholder, replaced below
     }, 'create');
@@ -340,15 +341,15 @@ export async function crearPedido(db: Db, body: unknown, opciones: {estado?: Est
     return enTransaccion(db, async client => {
         let lineas: Linea[];
         let total: number;
-        if (pedido['cod_servicio'] !== null) {
+        if (pedido['servicio'] !== null) {
             const {rows: [servicio]} = await client.query<{precio_persona: number; min_personas: number}>(
-                `SELECT precio_persona, min_personas FROM ${T.servicios} WHERE cod_servicio = $1 AND activo`, [pedido['cod_servicio']]);
+                `SELECT precio_persona, min_personas FROM ${T.servicios} WHERE nombre = $1 AND activo`, [pedido['servicio']]);
             if (!servicio) throw new ApiFailure(400, 'El servicio elegido no existe o no está disponible.');
             if (personas < servicio.min_personas) throw new ApiFailure(400, `Este servicio es para un mínimo de ${servicio.min_personas} personas.`);
             lineas = (await client.query<Linea>(`
-                SELECT sp.cod_plato, sp.porciones_por_persona * $2::int AS porciones, p.precio_porcion
-                FROM ${T.servicio_platos} sp JOIN ${T.platos} p ON p.cod_plato = sp.cod_plato
-                WHERE sp.cod_servicio = $1 AND p.activo ORDER BY sp.cod_plato`, [pedido['cod_servicio'], personas])).rows;
+                SELECT sp.plato, sp.porciones_por_persona * $2::int AS porciones, p.precio_porcion
+                FROM ${T.servicio_platos} sp JOIN ${T.platos} p ON p.nombre = sp.plato
+                WHERE sp.servicio = $1 AND p.activo ORDER BY sp.plato`, [pedido['servicio'], personas])).rows;
             if (!lineas.length) throw new ApiFailure(400, 'El servicio elegido no tiene platos disponibles.');
             total = servicio.precio_persona * personas;
         } else {
@@ -368,19 +369,19 @@ async function lineasALaCarta(client: PoolClient, value: unknown): Promise<Linea
     if (!Array.isArray(value) || value.length === 0 || value.length > cateringConfig.maxPlatosPorPedido) {
         throw new ApiFailure(400, `Elegí entre 1 y ${cateringConfig.maxPlatosPorPedido} platos.`);
     }
-    const items = value.map(item => readObject(item, ['cod_plato', 'porciones']));
-    const codigos = items.map(item => item['cod_plato']);
-    if (codigos.some(codigo => typeof codigo !== 'string') || new Set(codigos).size !== codigos.length) {
+    const items = value.map(item => readObject(item, ['plato', 'porciones']));
+    const nombres = items.map(item => item['plato']);
+    if (nombres.some(nombre => typeof nombre !== 'string') || new Set(nombres).size !== nombres.length) {
         throw new ApiFailure(400, 'Cada plato se elige una sola vez.');
     }
-    const {rows} = await client.query<{cod_plato: string; precio_porcion: number}>(
-        `SELECT cod_plato, precio_porcion FROM ${T.platos} WHERE activo AND cod_plato = ANY($1::text[])`, [codigos]);
-    const precios = new Map(rows.map(row => [row.cod_plato, row.precio_porcion]));
+    const {rows} = await client.query<{nombre: string; precio_porcion: number}>(
+        `SELECT nombre, precio_porcion FROM ${T.platos} WHERE activo AND nombre = ANY($1::text[])`, [nombres]);
+    const precios = new Map(rows.map(row => [row.nombre, row.precio_porcion]));
     return items.map(item => {
-        const precio = precios.get(item['cod_plato'] as string);
-        if (precio === undefined) throw new ApiFailure(400, `El plato ${String(item['cod_plato'])} no existe o no está disponible.`);
+        const precio = precios.get(item['plato'] as string);
+        if (precio === undefined) throw new ApiFailure(400, `El plato ${String(item['plato'])} no existe o no está disponible.`);
         if (!myContext.behaviours.posInteger.check(item['porciones'])) throw new ApiFailure(400, 'Las porciones tienen que ser un número entero mayor que 0.');
-        return {cod_plato: item['cod_plato'] as string, porciones: item['porciones'], precio_porcion: precio};
+        return {plato: item['plato'] as string, porciones: item['porciones'], precio_porcion: precio};
     });
 }
 
@@ -392,7 +393,7 @@ export async function cargarPedidosEjemplo(db: Db, file: string): Promise<number
 }
 
 function readId(value: unknown, error = 'El pedido no existe.'): string {
-    if (typeof value !== 'string' || !uuid.test(value)) throw new ApiFailure(404, error);
+    if (typeof value !== 'string' || !codigoPattern.test(value)) throw new ApiFailure(404, error);
     return value;
 }
 
@@ -455,9 +456,15 @@ export function registerCateringApi(app: Express, pool: Db, auth: Authentication
     admin.use(apiErrorHandler);
     app.use('/api/catering', admin);
 
-    // Without login: the catalog, placing an order and checking it by its secret code (the uuid).
+    /* Without login: the catalog, placing an order and checking it by its secret code. Each company has its
+       own order page, /pedido?empresa=<código>, so every public request runs as the company it names. */
     const pub = express.Router();
-    pub.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
+    pub.use((req, res, next) => {
+        res.setHeader('Cache-Control', 'no-store');
+        const empresa = req.query['empresa'];
+        if (typeof empresa !== 'string' || !empresa) throw new ApiFailure(404, 'Falta indicar la empresa: /pedido?empresa=<código>.');
+        runAsTenant(empresa, next);
+    });
     pub.use(express.json({limit: '16kb'}));
     pub.get('/catalogo', async (_req, res) => { res.json(await catalogo(pool)); });
     pub.post('/pedidos', authenticationLimit(), async (req, res) => {
@@ -466,7 +473,8 @@ export function registerCateringApi(app: Express, pool: Db, auth: Authentication
         publish('pedido_platos');
         res.status(201).json(result);
     });
-    pub.get('/pedidos/:id', async (req, res) => {
+    // Rate limited like the login, so order codes cannot be guessed by trying many.
+    pub.get('/pedidos/:id', authenticationLimit(), async (req, res) => {
         const {rows} = await pool.query<EstadoPedidoResponse>(
             `SELECT estado, fecha_evento, personas, total FROM ${T.pedidos} WHERE id = $1`, [readId(req.params['id'])]);
         if (!rows[0]) throw new ApiFailure(404, 'El pedido no existe.');

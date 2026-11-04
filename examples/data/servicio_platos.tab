@@ -1,8 +1,8 @@
-cod_servicio|cod_plato|porciones_por_persona
-COCTEL|EMP|3
-COCTEL|TAR|1
-COCTEL|LIM|1
-CENA|TAR|1
-CENA|LOM|1
-CENA|MOU|1
-CENA|LIM|2
+servicio|plato|porciones_por_persona
+Cóctel de bienvenida|Empanadas de jamón y queso|3
+Cóctel de bienvenida|Tarta de tomate y queso|1
+Cóctel de bienvenida|Limonada|1
+Cena formal|Tarta de tomate y queso|1
+Cena formal|Lomo al malbec con papas|1
+Cena formal|Mousse de chocolate|1
+Cena formal|Limonada|2

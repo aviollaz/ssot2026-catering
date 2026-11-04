@@ -19,7 +19,7 @@ test('assessment reports live schema differences without changing schema or data
         assert.ok(!empty.differences.some(diff => diff.path.length === 1 && diff.path[0] === 'schemas'));
         assert.ok(empty.differences.some(diff => diff.change === 'add'));
         for (const statement of value(generateCreate(expected)).statements) await handle.session.query(statement.text, statement.values);
-        await handle.session.query("INSERT INTO ssot.platos (cod_plato, nombre, descripcion, categoria, porciones_receta, precio_porcion, activo) VALUES ('EMP', 'Keep this row', null, 'Entrada', 1, 1, true)", []);
+        await handle.session.query("INSERT INTO ssot.platos (tenant, nombre, descripcion, categoria, porciones_receta, precio_porcion, activo) VALUES ('default', 'Keep this row', null, 'Entrada', 1, 1, true)", []);
         assert.deepEqual(value(await assessSchema(system, schema, handle.session)), {equal: true, differences: []});
         const absent = value(await assessSchema(system, 'missing_schema', handle.session));
         assert.ok(absent.differences.some(diff => diff.path.length === 1 && diff.path[0] === 'schemas'));
@@ -66,7 +66,7 @@ test('generated SQL preserves a rename and stages the required-field change arou
     try {
         const current = value(projectSsotSchema(system, schema));
         for (const statement of value(generateCreate(current)).statements) await handle.session.query(statement.text, statement.values);
-        await handle.session.query("INSERT INTO ssot.platos (cod_plato, nombre, descripcion, categoria, porciones_receta, precio_porcion, activo) VALUES ('EMP', 'kept', null, 'Entrada', 1, 1, true)", []);
+        await handle.session.query("INSERT INTO ssot.platos (tenant, nombre, descripcion, categoria, porciones_receta, precio_porcion, activo) VALUES ('default', 'kept', null, 'Entrada', 1, 1, true)", []);
         await handle.session.query("ALTER TABLE ssot.platos ALTER COLUMN descripcion SET DEFAULT 'pending'", []);
         current.objects.find(object => object.kind === 'column' && object.identity.name === 'descripcion').defaultExpression = "'pending'::text";
         const target = structuredClone(ssot);

@@ -8,7 +8,7 @@ import {allowedFields} from './column-security.js';
 import {prepareEntityWrite, insertPreparedRow} from './entity-write.js';
 
 // A file names an SSOT entity and contains its public creation inputs.
-export async function loadTabData(pool: Pool, directory: string): Promise<number> {
+export async function loadTabData(pool: Pick<Pool, 'connect'>, directory: string): Promise<number> {
     const entities = new Map<string, EntityInfo<typeof myContext>>(Object.values(myEntities)
         .map(definition => [definition.name, completeEntity(myContext, definition)]));
     const files = (await readdir(directory)).filter(name => name.endsWith('.tab')).sort();

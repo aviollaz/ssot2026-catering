@@ -3,14 +3,15 @@ import type {Pool} from 'pg';
 import {jwtVerify, SignJWT} from 'jose';
 import {randomUUID} from 'node:crypto';
 import {entitySql} from './entity-sql.js';
-import {authenticationEntity} from './system.js';
+import {authenticationEntity, tenantField} from './system.js';
+import {asAuthentication, runAsTenant} from './tenant.js';
 import {ApiFailure, apiErrorHandler, readObject} from './api-errors.js';
 import {createRecoveryCodes, hashPassword, hashRecoveryCode, readPassword, readUsername, verifyPassword} from './credentials.js';
 import type {AuthenticatedUser, LoginResponse, RecoveryCodesResponse, StoredRow} from './api-contract.js';
 
 const users = entitySql(authenticationEntity);
 const column = users.column;
-const session = users.select('id', 'usuario', 'version_sesion');
+const session = users.select('id', 'usuario', 'version_sesion', tenantField);
 const credentials = users.select(...session.fields, 'contrasena_hash');
 const passwordHash = users.select('contrasena_hash');
 type UserSession = Pick<StoredRow<typeof authenticationEntity>, typeof session.fields[number]>;
@@ -46,12 +47,13 @@ export function createAuthentication(pool: Pick<Pool, 'query'>, secret = process
         } catch {
             throw new ApiFailure(401, 'La sesión venció o no es válida.');
         }
-        const {rows} = await session.query(pool, `WHERE ${column('id')} = $1`, [identity.id]);
+        const {rows} = await asAuthentication(() => session.query(pool, `WHERE ${column('id')} = $1`, [identity.id]));
         const user = rows[0];
         if (!user || user.version_sesion !== identity.version) throw new ApiFailure(401, 'La sesión venció o no es válida.');
         res.locals['user'] = publicUser(user);
         res.setHeader('Cache-Control', 'no-store');
-        next();
+        // From here on, the request only sees and writes rows of the user's company.
+        runAsTenant(user.tenant ?? '', next);
     };
     return {issueToken, requireUser};
 }
@@ -91,7 +93,7 @@ export function registerAuthApi(app: Express, pool: Pick<Pool, 'query'>, auth: A
             if (!(error instanceof ApiFailure)) throw error;
             throw new ApiFailure(401, invalidCredentials);
         }
-        const {rows} = await credentials.query(pool, `WHERE ${column('usuario')} = $1`, [usuario]);
+        const {rows} = await asAuthentication(() => credentials.query(pool, `WHERE ${column('usuario')} = $1`, [usuario]));
         const user = rows[0];
         const verified = await verifyPassword(password, user?.contrasena_hash);
         if (!verified || !user) throw new ApiFailure(401, invalidCredentials);
@@ -106,9 +108,10 @@ export function registerAuthApi(app: Express, pool: Pick<Pool, 'query'>, auth: A
         const password = await hashPassword(readPassword(body['contrasena']));
         const recovery = createRecoveryCodes();
         // One atomic update consumes the previous set and revokes every existing JWT.
-        const result = await pool.query(`UPDATE ${users.table} SET ${column('contrasena_hash')} = $1, ${column('recuperacion_hashes')} = $2, ${column('version_sesion')} = $3
+        const code = hashRecoveryCode(body['codigo']);
+        const result = await asAuthentication(() => pool.query(`UPDATE ${users.table} SET ${column('contrasena_hash')} = $1, ${column('recuperacion_hashes')} = $2, ${column('version_sesion')} = $3
             WHERE ${column('usuario')} = $4 AND ${column('recuperacion_hashes')}::jsonb ? $5 RETURNING ${column('id')}`,
-        [password, recovery.hashes, randomUUID(), usuario, hashRecoveryCode(body['codigo'])]);
+        [password, recovery.hashes, randomUUID(), usuario, code]));
         if (!result.rowCount) throw new ApiFailure(401, 'Usuario o código de recuperación incorrectos.');
         res.json({codes: recovery.codes} satisfies RecoveryCodesResponse);
     });

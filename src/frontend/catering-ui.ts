@@ -7,12 +7,12 @@ export const numero = (value: number): string => value.toLocaleString('es-AR', {
 /* Quantities are stored in the ingredient's base unit (g, ml, u). These are the units it can be shown or
    bought in: the base unit first, then every conversion of that base, preselecting the purchase unit. */
 export function selectorUnidad(base: string, unidades: readonly Unidad[], preferida: string | null): {select: HTMLSelectElement; factor: () => number} {
-    const opciones: Unidad[] = [{cod_unidad: base, nombre: base, base: base as Unidad['base'], factor: 1},
-        ...unidades.filter(u => u.base === base && u.cod_unidad !== base)];
+    const opciones: Unidad[] = [{nombre: base, base: base as Unidad['base'], factor: 1},
+        ...unidades.filter(u => u.base === base && u.nombre !== base)];
     const select = element('select');
-    select.append(...opciones.map(u => new Option(u.nombre, u.cod_unidad)));
-    if (opciones.some(u => u.cod_unidad === preferida)) select.value = preferida!;
-    return {select, factor: () => opciones.find(u => u.cod_unidad === select.value)!.factor};
+    select.append(...opciones.map(u => new Option(u.nombre, u.nombre)));
+    if (opciones.some(u => u.nombre === preferida)) select.value = preferida!;
+    return {select, factor: () => opciones.find(u => u.nombre === select.value)!.factor};
 }
 export const fechaHora = (value: string): string =>
     new Date(value).toLocaleString('es-AR', {dateStyle: 'medium', timeStyle: 'short'});

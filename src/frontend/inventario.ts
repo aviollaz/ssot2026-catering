@@ -89,7 +89,7 @@ async function show(content: HTMLElement): Promise<(changed: string | null) => v
             const ingrediente = element('select');
             ingrediente.required = true;
             ingrediente.setAttribute('aria-label', 'Ingrediente');
-            ingrediente.append(new Option('Elegí…', ''), ...opciones.ingredientes.map(i => new Option(i.nombre, i.cod_ing)));
+            ingrediente.append(new Option('Elegí…', ''), ...opciones.ingredientes.map(i => new Option(i.nombre, i.nombre)));
             const cantidad = element('input');
             cantidad.type = 'number';
             cantidad.required = true;
@@ -102,7 +102,7 @@ async function show(content: HTMLElement): Promise<(changed: string | null) => v
             let unidad = selectorUnidad('', [], null);
             // The units follow the ingredient, starting at its purchase unit, with its current stock in that unit.
             const actualizar = (cambioIngrediente: boolean) => {
-                const elegido = opciones.ingredientes.find(i => i.cod_ing === ingrediente.value);
+                const elegido = opciones.ingredientes.find(i => i.nombre === ingrediente.value);
                 if (cambioIngrediente) {
                     unidad = selectorUnidad(elegido?.unidad ?? '', opciones.unidades, elegido?.unidad_compra ?? null);
                     unidad.select.setAttribute('aria-label', 'Unidad');
@@ -113,8 +113,8 @@ async function show(content: HTMLElement): Promise<(changed: string | null) => v
                 celdaStock.textContent = elegido ? `Stock: ${numero(elegido.stock_actual / unidad.factor())}` : '';
             };
             ingrediente.onchange = () => actualizar(true);
-            lectores.push(() => tr.isConnected ? {ingrediente: {cod_ing: ingrediente.value, cantidad: Number(cantidad.value),
-                cod_unidad: unidad.select.value}} : {});
+            lectores.push(() => tr.isConnected ? {ingrediente: {ingrediente: ingrediente.value, cantidad: Number(cantidad.value),
+                unidad: unidad.select.value}} : {});
         }
         tr.insertCell().append(actionButton('Quitar', 'delete', () => { tr.remove(); }, 'danger'));
     }
@@ -123,7 +123,7 @@ async function show(content: HTMLElement): Promise<(changed: string | null) => v
         const encabezado = Object.fromEntries(Object.entries(movimiento.read()).filter(([name]) => name !== 'anula'));
         const leidas = lectores.map(leerLinea => leerLinea());
         return {...encabezado, ...tipo() === 'Egreso'
-            ? {platos: leidas.flatMap(l => l.platos ? [{cod_plato: l.platos['cod_plato'] as string, porciones: l.platos['porciones'] as number}] : [])}
+            ? {platos: leidas.flatMap(l => l.platos ? [{plato: l.platos['plato'] as string, porciones: l.platos['porciones'] as number}] : [])}
             : {ingredientes: leidas.flatMap(l => l.ingrediente ? [l.ingrediente] : [])}} as NuevoMovimiento;
     }
 
@@ -149,15 +149,15 @@ async function show(content: HTMLElement): Promise<(changed: string | null) => v
         lectores = [];
         setActionLabel(agregar, egreso ? 'Agregar plato' : 'Agregar ingrediente');
         vistaPrevia.replaceChildren();
-        if (sugerido) for (const plato of sugerido.platos) nuevaLinea({cod_plato: plato.cod_plato, porciones: plato.porciones});
+        if (sugerido) for (const plato of sugerido.platos) nuevaLinea({plato: plato.plato, porciones: plato.porciones});
         else nuevaLinea();
         editando = false;
     }
 
     function mostrarCambios({ingredientes}: MovimientoResponse): HTMLElement {
         return tabla(['Ingrediente', 'Cambio de stock', 'Unidad'], ingredientes.map(cambio => {
-            const ingrediente = opciones.ingredientes.find(i => i.cod_ing === cambio.cod_ing);
-            return [ingrediente?.nombre ?? cambio.cod_ing, (cambio.cantidad > 0 ? '+' : '') + numero(cambio.cantidad), ingrediente?.unidad ?? ''];
+            const ingrediente = opciones.ingredientes.find(i => i.nombre === cambio.ingrediente);
+            return [cambio.ingrediente, (cambio.cantidad > 0 ? '+' : '') + numero(cambio.cantidad), ingrediente?.unidad ?? ''];
         }), 'No cambia el stock (los platos no tienen receta, o el stock ya era ese).');
     }
 
