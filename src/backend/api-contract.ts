@@ -3,7 +3,7 @@ import type {EntityInfoOf, EntityInstanceType} from 'system-definition';
 import type {myRecords, myEntities} from './system.js';
 import type {InputConstraints} from './value-types.js';
 import type {EntityResponse as BrowserEntityResponse} from './browser-contract.js';
-export type {EntityWindow, ApiError, AuthenticatedUser, LoginResponse, RecoveryCodesResponse} from './browser-contract.js';
+export type {EntityWindow, ApiError, AuthenticatedUser, LoginResponse, CustomerLoginResponse, RecoveryCodesResponse} from './browser-contract.js';
 
 export type EntityName = keyof typeof myEntities;
 export type EntityNamesResponse = {name: EntityName; label: string; area: string}[];

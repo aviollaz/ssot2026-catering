@@ -3,9 +3,9 @@
 ## Contexto
 Para el TP grupal hay que construir una lógica de negocio realista sobre el repo de la clase. Elegimos un gestor para empresas de catering. Va a tener dos partes:
 - **Panel de la empresa** (con login): carga de ingredientes, platos, recetas, servicios y stock, y vista de pedidos. También calcula **cuánto comprar para cada pedido**, teniendo en cuenta el stock actual y lo que consumen los pedidos confirmados anteriores.
-- **Página pública para clientes**, elegante y sin cuenta. El cliente elige un servicio o arma su pedido plato por plato, indica fecha, hora y cantidad de personas, carga sus datos y recibe un código para consultar el estado.
+- **Página de pedidos para clientes**, elegante y pública para explorar el catálogo. El cliente elige un servicio o arma su pedido plato por plato, indica fecha, hora y datos de contacto; para confirmar, inicia sesión o crea una cuenta de cliente separada de las cuentas administrativas. Recibe un código para consultar el estado.
 
-Decisiones tomadas: se reemplazan las entidades académicas. El cliente pide sin cuenta. Se incluyen estados del pedido, unidades de medida, servicios/menús, precio y anticipación mínima. Solo los pedidos **Confirmados** con fecha anterior descuentan stock.
+Decisiones tomadas: se reemplazan las entidades académicas. Las cuentas de clientes son distintas de las administrativas y solo pueden confirmar pedidos; consultar el catálogo y el estado por código sigue siendo público. Se incluyen estados del pedido, unidades de medida, servicios/menús, precio y anticipación mínima. Solo los pedidos **Confirmados** con fecha anterior descuentan stock.
 
 Qué aprovechamos del repo: la SSOT (`src/backend/system.ts`) genera las tablas, las migraciones y el **panel admin entero**. La planilla genérica ya ofrece CRUD, filtros, FKs con desplegables y eventos en vivo para cualquier entidad. Solo hay que escribir a mano la lógica de negocio: el cálculo de compras, el alta pública de pedidos y la página del cliente.
 
@@ -64,7 +64,7 @@ Transición de estado: `POST /api/catering/pedidos/:id/entregar` pasa el pedido 
 
 ## 5. API pública (sin login) — en `catering.ts`, router `/api/public`
 - `GET /api/public/catalogo`: platos y servicios activos, con sus platos y precios. Solo campos públicos.
-- `POST /api/public/pedidos`: recibe `{cliente..., fecha_evento, personas, cod_servicio? | platos:[{cod_plato, porciones}]}`. Valida con la SSOT reutilizando `prepareEntityWrite`/`insertPreparedRow` de `entity-write.ts`. Exige anticipación mínima (p. ej. 3 días, constante en un `catering-config`), `min_personas` y platos activos. Calcula el total en el servidor (nunca se confía en el precio que manda el navegador). Inserta `pedidos` y `pedido_platos` en **una transacción**, en estado Pendiente, llama a `publish('pedidos')` para que el admin lo vea en vivo y devuelve `{id, total}`.
+- `POST /api/public/auth/register` y `/login`: crean o autentican una cuenta en `clientes`, separada de `usuarios`. Sus tokens no habilitan la API administrativa. `POST /api/public/pedidos` requiere ese token y asocia el pedido con la cuenta autenticada; además recibe `{cliente..., fecha_evento, personas, cod_servicio? | platos:[{cod_plato, porciones}]}`. Valida con la SSOT reutilizando `prepareEntityWrite`/`insertPreparedRow` de `entity-write.ts`. Exige anticipación mínima, `min_personas` y platos activos. Calcula el total en el servidor (nunca se confía en el precio que manda el navegador). Inserta `pedidos` y `pedido_platos` en **una transacción**, en estado Pendiente, publica el cambio para que el administrador lo vea en vivo y devuelve `{id, total}`.
 - `GET /api/public/pedidos/:id`: estado, fecha y total. El uuid funciona como código secreto y no expone datos personales.
 - Reutilizar el rate limit de `auth.ts` en el POST para evitar spam.
 

@@ -7,21 +7,24 @@ import {createAuthentication, registerAuthApi} from './auth.js';
 import {initializeUsers, reportInitialization} from './bootstrap.js';
 import {registerEntityEvents} from './entity-events.js';
 import {registerCateringApi} from './catering.js';
+import {createCustomerAuthentication, registerCustomerAuthApi} from './customer-auth.js';
 
 const pool = new Pool(databaseConfig);
 const app = express();
 const auth = createAuthentication(pool);
+const customerAuth = createCustomerAuthentication(pool);
 const publish = registerEntityEvents(app, auth);
 registerAuthApi(app, pool, auth);
+registerCustomerAuthApi(app, pool, customerAuth);
 registerEntityApi(app, pool, auth, publish);
-registerCateringApi(app, pool, auth, publish);
+registerCateringApi(app, pool, auth, customerAuth, publish);
 
 app.get('/health', async (_, res) => {
     await pool.query('SELECT 1');
     res.json({ok: true});
 });
 app.get('/menu', (_, res) => { res.redirect('/'); });
-app.get('/pedido', (_, res) => { res.sendFile(fileURLToPath(new URL('../../src/frontend/public/pedido.html', import.meta.url))); });
+app.get(['/pedido', '/pedidos'], (_, res) => { res.sendFile(fileURLToPath(new URL('../../src/frontend/public/pedido.html', import.meta.url))); });
 app.use('/assets', express.static(fileURLToPath(new URL('../frontend', import.meta.url))));
 app.use(express.static(fileURLToPath(new URL('../../src/frontend/public', import.meta.url))));
 

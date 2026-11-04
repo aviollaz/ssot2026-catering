@@ -101,8 +101,9 @@ const servicio_plato = defineRecord(myTypes,{
 
 const pedido = defineRecord(myTypes,{
     id               :{ type:'text', label: 'Código de pedido', writable: false as const, onCreate: 'uuid' as const },
+    cliente_id       :{ type:'text', label: 'Cuenta del cliente', writable: false as const, visible: false as const },
     cliente_nombre   :{ type:'text', label: 'Cliente', isName: true, nullable: false },
-    cliente_email    :{ type:'text', label: 'Email', nullable: false },
+    cliente_email    :{ type:'text', label: 'Email', nullable: false, maxLength: 254 },
     cliente_telefono :{ type:'text', label: 'Teléfono', nullable: false },
     direccion        :{ type:'text', label: 'Dirección', nullable: false },
     fecha_evento     :{ type:'fechaHora', label: 'Fecha del evento', nullable: false },
@@ -158,8 +159,17 @@ const usuario = defineRecord(myTypes, {
         onCreate: 'uuid' as const, onUpdate: 'uuid' as const},
 });
 
+const cliente = defineRecord(myTypes, {
+    id: {type: 'text', nullable: false, writable: false as const, visible: false as const, onCreate: 'uuid' as const},
+    email: {type: 'text', label: 'Email', nullable: false, maxLength: 254},
+    contrasena_hash: {type: 'text', nullable: false, label: 'Contraseña', readable: false as const,
+        inputName: 'contrasena' as const, inputType: 'password' as const, transform: 'password' as const},
+    version_sesion: {type: 'text', nullable: false, readable: false as const, writable: false as const,
+        onCreate: 'uuid' as const, onUpdate: 'uuid' as const},
+});
+
 export const myRecords = withRecords(myTypes, {ingrediente, unidad_medida, plato, receta, servicio, servicio_plato, pedido, pedido_plato,
-    movimiento, movimiento_plato, movimiento_ingrediente, usuario})
+    movimiento, movimiento_plato, movimiento_ingrediente, usuario, cliente})
 
 function validarPedido(pedido:{personas?:number | null, cliente_email?:string | null}){
     var problemas: Problem[] = []
@@ -234,7 +244,10 @@ const pedidos = defineEntity(myContext, {
     name: 'pedidos',
     record: 'pedido',
     pk: ['id'],
-    fks: {servicio: {entity: 'servicios', fields: ['cod_servicio']}},
+    fks: {
+        cliente: {entity: 'clientes', fields: {cliente_id: 'id'}},
+        servicio: {entity: 'servicios', fields: ['cod_servicio']},
+    },
     validators: ['validarPedido']
 })
 
@@ -276,22 +289,29 @@ const usuarios = defineEntity(myContext, {
     uks: {usuario_unico: ['usuario']},
 });
 
+const clientes = defineEntity(myContext, {
+    name: 'clientes',
+    record: 'cliente',
+    pk: ['id'],
+    uks: {email_unico: ['email']},
+});
+
 export const myEntities = defineEntities({pedidos, pedido_platos, platos, recetas, ingredientes, unidades, servicios, servicio_platos,
-    movimientos, movimiento_platos, movimiento_ingredientes, usuarios})
+    movimientos, movimiento_platos, movimiento_ingredientes, usuarios, clientes})
 
 // Presentation is app-owned metadata; browsers receive it through the API.
 export const entityLabels = {
     pedidos: 'Pedidos', pedido_platos: 'Platos por pedido', platos: 'Platos', recetas: 'Recetas',
     ingredientes: 'Ingredientes', unidades: 'Unidades', servicios: 'Servicios', servicio_platos: 'Platos por servicio',
     movimientos: 'Movimientos de stock', movimiento_platos: 'Platos por movimiento', movimiento_ingredientes: 'Ingredientes por movimiento',
-    usuarios: 'Usuarios',
+    usuarios: 'Administradores', clientes: 'Clientes',
 } satisfies Record<keyof typeof myEntities, string>;
 
 // Area of each sheet in the ☰ menu; "Area/Subarea" nests one inside another.
 export const entityAreas = {
     pedidos: 'Ventas', servicios: 'Ventas', platos: 'Cocina', ingredientes: 'Cocina', unidades: 'Cocina',
     movimientos: 'Inventario', recetas: 'Avanzado', servicio_platos: 'Avanzado', pedido_platos: 'Avanzado',
-    movimiento_platos: 'Avanzado', movimiento_ingredientes: 'Avanzado', usuarios: 'Avanzado',
+    movimiento_platos: 'Avanzado', movimiento_ingredientes: 'Avanzado', usuarios: 'Avanzado', clientes: 'Avanzado',
 } satisfies Record<keyof typeof myEntities, string>;
 
 // Child tables shown and edited in a row's Detalle, such as a dish's recipe. Each one needs a foreign key to its parent.

@@ -16,12 +16,15 @@ TP grupal sobre el repo de la clase: un gestor para empresas de catering (plan e
     puede editar a mano.
   - **Compras**: qué comprar para cada pedido o período, en la unidad que se elija.
   - **Estadísticas**.
-- **Página para clientes** (`/pedido`, sin cuenta): elegir un menú armado o platos a
-  la carta, fecha, personas y datos de contacto; devuelve un código para consultar
-  el estado en `/pedido?codigo=…`.
+- **Página para clientes** (`/pedidos`): elegir un menú armado o platos a la carta,
+  fecha, personas y datos de contacto; para confirmar, iniciar sesión o registrarse.
+  Cada cuenta de cliente es independiente de `usuarios` (administradores) y solo
+  puede usar el flujo de pedidos. Devuelve un código para consultar el estado.
 
 La lógica de negocio está en `src/backend/catering.ts` (API `/api/catering`, con
-sesión, y `/api/public`, sin sesión) y la exportación en `exportar.ts` y `xlsx.ts`;
+sesión administrativa, y `/api/public`, pública para catálogo/consulta y autenticada
+para crear pedidos) y `src/backend/customer-auth.ts` (registro y acceso de clientes);
+la exportación está en `exportar.ts` y `xlsx.ts`;
 el frontend en `src/frontend/inventario.ts`, `compras.ts`, `estadisticas.ts`, `pedido.ts`
 y `detalle-hijos.ts`. `npm run test:catering` prueba el cálculo de compras, los
 movimientos de stock, la exportación y la API pública contra una base aislada.
@@ -102,11 +105,12 @@ Si se corre de nuevo, falla por datos duplicados y no cambia nada.
 
 - Panel de la empresa: <http://localhost:3001/>. Las planillas, **Inventario**, **Compras** y
   **Estadísticas** están en el menú ☰.
-- Página para clientes: <http://localhost:3001/pedido>.
+- Página para clientes: <http://localhost:3001/pedidos>.
 
 Para probar el flujo completo:
 
-1. Hacé un pedido desde `/pedido`. Aparece solo en la planilla **Pedidos**.
+1. Hacé un pedido desde `/pedidos`, iniciando sesión o registrando una cuenta cuando
+   quieras confirmarlo. Aparece solo en la planilla **Pedidos**.
 2. Cambiale el estado a `Confirmado`.
 3. En **Compras**, elegí el pedido, mirá qué hay que comprar y tocá **Registrar egreso**.
 4. En **Inventario** aparecen los platos del pedido: corregí las porciones que realmente se
@@ -420,10 +424,10 @@ PostgreSQL is exposed on `127.0.0.1:5433`; the backend defaults to port 3001, al
 Set `JWT_SECRET` to a random secret of at least 32 bytes before starting the backend
 or Compose. Generate one with
 `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
-The backend rejects missing/short secrets. Apply the included incremental migration
-with `npm run migration:apply`; the migration catalog creates `usuarios` and the
-incremental `0003_authenticated_administrators` removes the obsolete role/status
-columns while preserving accounts, credentials and the previous migration files.
+The backend rejects missing/short secrets. Apply the included incremental migrations
+with `npm run migration:apply`; the catalog creates `usuarios`, removes obsolete
+administrator role/status columns in `0003_authenticated_administrators`, and adds
+the separate customer accounts and order relationship in `0010_customer_accounts`.
 
 On cold start, the backend initializes the first account before listening for
 requests. If `usuarios` is empty, `AUTH_ADMIN_USERNAME` and `AUTH_ADMIN_PASSWORD`
@@ -445,14 +449,21 @@ together and returns the same generic error for unknown users, wrong passwords
 and invalid credential formats. Recovery is available on the page; account
 management remains accessible after login.
 
-Every authenticated account is an administrator and can
-create, edit and delete users through the same CRUD used for other entities. There
-are no role or activation-state columns and no account-specific deletion rules.
+Every account in `usuarios` is an administrator and can create, edit and delete
+administrators through the same CRUD used for other entities. There are no role or
+activation-state columns and no account-specific deletion rules.
 Usernames are case-insensitive and accept 3–64 ASCII
 letters, digits, underscores, dots or hyphens. IDs are generated on the server.
 The password is required on creation and optional on editing; omission preserves
 the existing hash. Updating or deleting the current account has the same effect
 as updating or deleting another account, including revocation of its JWTs.
+
+Customer accounts live in the separate `clientes` entity and use email plus
+password. Their tokens have a distinct audience and cannot access administrator
+entities or catering-management endpoints. They can only register, sign in/out and
+place orders; the server associates each order with the authenticated customer.
+Existing orders remain unowned (`cliente_id` is nullable), and customer-facing
+status lookup continues to use the order's secret code.
 
 Passwords use salted scrypt (`N=32768, r=8, p=3`). JWTs use HS256 through `jose`,
 expire 24 hours after login (without sliding renewal) and validate the algorithm, issuer, audience and required

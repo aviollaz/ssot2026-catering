@@ -39,5 +39,8 @@
         "test:crud": "npm run build && node --env-file-if-exists=.env --test test/crud.integration.test.mjs test/auth.integration.test.mjs test/browsing.integration.test.mjs",
         "test:ui": "npm run build && node --env-file-if-exists=.env --test test/ui.browser.test.mjs",
         "test:catering": "npm run build && node --env-file-if-exists=.env --test test/catering.integration.test.mjs"
+    },
+    "allowScripts": {
+        "file:../../system-definition": true
     }
 }

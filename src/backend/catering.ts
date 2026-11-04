@@ -6,12 +6,14 @@ import {myContext, myEntities} from './system.js';
 import type {EntityName, StoredRow} from './api-contract.js';
 import {ApiFailure, apiErrorHandler, readObject} from './api-errors.js';
 import {authenticationLimit, type Authentication} from './auth.js';
+import {customerPrincipal, type CustomerAuthentication} from './customer-auth.js';
 import {entityTable, insertPreparedRow, prepareEntityWrite} from './entity-write.js';
 import {cateringConfig} from './catering-config.js';
 import {datosDeContacto, exportables, exportarTablas} from './exportar.js';
 import {localDateTime} from './value-types.js';
 import type {CatalogoResponse, ComprasResponse, EgresoSugerido, EstadisticasResponse, EstadoPedidoResponse, MovimientoResponse,
-    ExportablesResponse, MovimientoResumen, NuevoPedidoResponse, OpcionesInventario, PedidoPendiente, TipoMovimiento, Unidad} from './catering-contract.js';
+    ExportablesResponse, MovimientoResumen, NuevoPedidoResponse, OpcionesInventario, PedidoCuenta, PedidoLinkResponse, PedidoPendiente,
+    TipoMovimiento, Unidad} from './catering-contract.js';
 
 type Db = Pick<Pool, 'query' | 'connect'>;
 type EstadoPedido = StoredRow<'pedidos'>['estado'];
@@ -319,7 +321,7 @@ type Linea = {cod_plato: string; porciones: number; precio_porcion: number};
 /* Creates an order and its dishes in one transaction, validated by the SSOT. The total always comes
    from the server's prices. A service copies its dishes (personas × porciones_por_persona) and is
    charged per person; an à la carte order is charged per portion. */
-export async function crearPedido(db: Db, body: unknown, opciones: {estado?: EstadoPedido; ahora?: Date | null} = {}): Promise<NuevoPedidoResponse> {
+export async function crearPedido(db: Db, body: unknown, opciones: {estado?: EstadoPedido; ahora?: Date | null; clienteId?: string} = {}): Promise<NuevoPedidoResponse> {
     const cliente = ['cliente_nombre', 'cliente_email', 'cliente_telefono', 'direccion', 'fecha_evento', 'personas'];
     const input = readObject(body, cliente, ['observaciones', 'cod_servicio', 'platos']);
     if (Object.hasOwn(input, 'cod_servicio') === Object.hasOwn(input, 'platos')) {
@@ -332,6 +334,7 @@ export async function crearPedido(db: Db, body: unknown, opciones: {estado?: Est
         estado: opciones.estado ?? 'Pendiente',
         total: 1, // validated as a placeholder, replaced below
     }, 'create');
+    pedido['cliente_id'] = opciones.clienteId ?? null;
     const personas = pedido['personas'] as number;
     const ahora = opciones.ahora === undefined ? new Date() : opciones.ahora;
     if (ahora && Date.parse(pedido['fecha_evento'] as string) < ahora.getTime() + cateringConfig.anticipacionDias * 24 * 60 * 60 * 1000) {
@@ -403,7 +406,8 @@ function readDate(value: unknown): string {
     return value;
 }
 
-export function registerCateringApi(app: Express, pool: Db, auth: Authentication, publish: (name: EntityName) => void = () => {}): void {
+export function registerCateringApi(app: Express, pool: Db, auth: Authentication, customerAuth: CustomerAuthentication,
+    publish: (name: EntityName) => void = () => {}): void {
     const admin = express.Router();
     admin.use(auth.requireUser);
     admin.use(express.json({limit: '32kb'}));
@@ -455,16 +459,31 @@ export function registerCateringApi(app: Express, pool: Db, auth: Authentication
     admin.use(apiErrorHandler);
     app.use('/api/catering', admin);
 
-    // Without login: the catalog, placing an order and checking it by its secret code (the uuid).
+    // Ordering and status lookup are public; an account is optional and provides an order history.
     const pub = express.Router();
     pub.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
     pub.use(express.json({limit: '16kb'}));
     pub.get('/catalogo', async (_req, res) => { res.json(await catalogo(pool)); });
-    pub.post('/pedidos', authenticationLimit(), async (req, res) => {
-        const result = await crearPedido(pool, req.body);
+    pub.post('/pedidos', customerAuth.optionalCustomer, authenticationLimit(), async (req, res) => {
+        const customer = res.locals['customer'] as {id: string} | undefined;
+        const result = await crearPedido(pool, req.body, customer ? {clienteId: customer.id} : {});
         publish('pedidos');
         publish('pedido_platos');
         res.status(201).json(result);
+    });
+    pub.get('/mis-pedidos', customerAuth.requireCustomer, async (_req, res) => {
+        const customer = customerPrincipal(res);
+        const {rows} = await pool.query<PedidoCuenta>(`SELECT id, estado, fecha_evento, personas, total
+            FROM ${T.pedidos} WHERE cliente_id = $1 ORDER BY creado DESC, id`, [customer.id]);
+        res.json(rows);
+    });
+    pub.post('/mis-pedidos/:id', customerAuth.requireCustomer, async (req, res) => {
+        const customer = customerPrincipal(res);
+        const id = readId(req.params['id']);
+        const {rowCount} = await pool.query(`UPDATE ${T.pedidos} SET cliente_id = $1
+            WHERE id = $2 AND LOWER(cliente_email) = LOWER($3) AND (cliente_id IS NULL OR cliente_id = $1)`,
+        [customer.id, id, customer.email]);
+        res.json({associated: rowCount === 1} satisfies PedidoLinkResponse);
     });
     pub.get('/pedidos/:id', async (req, res) => {
         const {rows} = await pool.query<EstadoPedidoResponse>(
