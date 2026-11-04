@@ -27,40 +27,40 @@
     --danger-soft: #fde7e9;
     --danger-soft-border: #f3b2b7;
     --error: #d83b01;
-    color-scheme: light dark;
+    color-scheme: light;
     font-family: system-ui, -apple-system, sans-serif; color: var(--text); background: var(--page);
 }
-@media (prefers-color-scheme: dark) {
-    :root {
-        --page: #1b1a19;
-        --surface: #252423;
-        --surface-alt: #323130;
-        --hover: #3b3a39;
-        --row-even: #292827;
-        --row-hover: #2d2c2b;
-        --row-new: #1f3328;
-        --text: #f3f2f1;
-        --text-header: #e1dfdd;
-        --text-muted: #c8c6c4;
-        --on-accent: white;
-        --border: #605e5c;
-        --border-strong: #a19f9d;
-        --divider: #3b3a39;
-        --grid-line: #3b3a39;
-        --edge: #797775;
-        --accent: #107c41;
-        --accent-hover: #138a48;
-        --accent-border: #3a9d63;
-        --accent-text: #5cc98a;
-        --accent-soft: #1d3a29;
-        --danger: #c50f1f;
-        --danger-hover: #a80000;
-        --danger-border: #d13438;
-        --danger-text: #f1707b;
-        --danger-soft: #442726;
-        --danger-soft-border: #6e3b3d;
-        --error: #f7894a;
-    }
+/* Dark palette. theme.js sets data-theme before the page paints: the computer's theme, or the one chosen with the button. */
+:root[data-theme=dark] {
+    color-scheme: dark;
+    --page: #1b1a19;
+    --surface: #252423;
+    --surface-alt: #323130;
+    --hover: #3b3a39;
+    --row-even: #292827;
+    --row-hover: #2d2c2b;
+    --row-new: #1f3328;
+    --text: #f3f2f1;
+    --text-header: #e1dfdd;
+    --text-muted: #c8c6c4;
+    --on-accent: white;
+    --border: #605e5c;
+    --border-strong: #a19f9d;
+    --divider: #3b3a39;
+    --grid-line: #3b3a39;
+    --edge: #797775;
+    --accent: #107c41;
+    --accent-hover: #138a48;
+    --accent-border: #3a9d63;
+    --accent-text: #5cc98a;
+    --accent-soft: #1d3a29;
+    --danger: #c50f1f;
+    --danger-hover: #a80000;
+    --danger-border: #d13438;
+    --danger-text: #f1707b;
+    --danger-soft: #442726;
+    --danger-soft-border: #6e3b3d;
+    --error: #f7894a;
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -160,7 +160,7 @@ td input[type=checkbox] { width: auto; height: auto; }
 .toolbar .icon-action svg { width: 18px; height: 18px; }
 .row-actions { position: sticky; right: 0; z-index: 1; background: var(--surface); box-shadow: -1px 0 var(--border); }
 thead .row-actions, thead .selection-col { z-index: 3; background: var(--surface-alt); }
-#open-tables, .session-info button { min-height: 44px; }
+#open-tables, #theme, .session-info button { min-height: 44px; }
 #open-tables { min-width: 44px; }
 .user-badge { display: none; }
 
