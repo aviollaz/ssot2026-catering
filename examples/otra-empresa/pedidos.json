@@ -1,0 +1,8 @@
+[
+    {"estado": "Confirmado", "cliente_nombre": "Federico Luna", "cliente_email": "federico@example.com", "cliente_telefono": "11 5555-0606",
+     "direccion": "Av. Santa Fe 3200, CABA", "fecha_evento": "2026-11-18T17:00", "personas": 20, "observaciones": "Merienda de oficina",
+     "servicio": "Merienda saludable"},
+    {"estado": "Pendiente", "cliente_nombre": "Gabriela Ríos", "cliente_email": "gabriela@example.com", "cliente_telefono": "11 5555-0707",
+     "direccion": "Belgrano 900, Quilmes", "fecha_evento": "2026-11-25T12:00", "personas": 12, "observaciones": null,
+     "platos": [{"plato": "Hummus con pan integral", "porciones": 12}, {"plato": "Limonada", "porciones": 12}]}
+]

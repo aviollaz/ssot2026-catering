@@ -123,6 +123,37 @@ docker compose run --rm --no-deps backend npm run data:examples
 
 Si se corre de nuevo, falla por datos duplicados y no cambia nada.
 
+#### Opcional: otra empresa, para ver el aislamiento
+
+Crear una segunda empresa (código `dulce-verde`) con su propio administrador. El usuario tiene
+que ser distinto de los que ya existen en cualquier empresa, y la contraseña, de 12 a 128
+caracteres:
+
+```sh
+docker compose run --rm --no-deps backend npm run tenant:create -- dulce-verde "Dulce Verde" verde_admin verdeverde1234
+```
+
+Como con el primer administrador, el comando imprime sus códigos de recuperación.
+
+Opcionalmente, cargarle datos de ejemplo distintos (`examples/otra-empresa`: catering vegano, con
+su propia "Limonada" y su propio "Limón", para mostrar que los nombres solo son únicos dentro de
+cada empresa):
+
+```sh
+docker compose run --rm --no-deps backend npm run data:examples -- examples/otra-empresa dulce-verde
+```
+
+El segundo argumento elige la empresa. Sin él, los datos van a `default`. Si se omite este paso,
+la empresa queda vacía.
+
+Para ver el aislamiento:
+
+- Entrá a <http://localhost:3001/> como `verde_admin`: solo aparecen los platos, ingredientes y
+  pedidos de Dulce Verde. Como `jamaica123` se ven solo los de `default`.
+- Abrí <http://localhost:3001/pedido?empresa=dulce-verde>: el catálogo es el de Dulce Verde, y un
+  pedido hecho ahí aparece solo en la planilla **Pedidos** de esa empresa.
+- Un mismo código de pedido no se encuentra consultándolo con `?empresa=` de la otra empresa.
+
 ### 6. Usarlo
 
 - Panel de la empresa: <http://localhost:3001/>. Las planillas, **Inventario**, **Compras** y
