@@ -16,9 +16,34 @@ TP grupal sobre el repo de la clase: un gestor para empresas de catering (plan e
     puede editar a mano.
   - **Compras**: qué comprar para cada pedido o período, en la unidad que se elija.
   - **Estadísticas**.
-- **Página para clientes** (`/pedido`, sin cuenta): elegir un menú armado o platos a
-  la carta, fecha, personas y datos de contacto; devuelve un código para consultar
-  el estado en `/pedido?codigo=…`.
+- **Página para clientes** (`/pedido?empresa=<código>`, sin cuenta): elegir un menú armado o
+  platos a la carta, fecha, personas y datos de contacto; devuelve un código corto (como
+  `K7PQ-4XMZ`) para consultar el estado en `/pedido?empresa=<código>&codigo=…`.
+- **Varias empresas (multi-tenant)**: todas comparten las tablas, y cada fila lleva una columna
+  oculta `tenant` con la empresa a la que pertenece. Cada usuario es de una empresa y solo ve y
+  escribe sus filas. Platos, ingredientes, unidades y servicios se identifican por su nombre,
+  único dentro de cada empresa.
+
+### Cómo funciona el multi-tenant
+
+1. **SSOT** (`src/backend/system.ts`): la columna `tenant` (`tenantField`) encabeza las claves y
+   referencias de cada tabla, así una fila solo puede referenciar filas de su empresa.
+   `entityTenancy` declara cómo se filtra cada tabla.
+2. **Reglas de PostgreSQL (row-level security)**: `src/backend/tenant-policies.ts` las genera desde
+   `entityTenancy` y corre automáticamente después de las migraciones (`docker compose run --rm
+   migrations`). Las migraciones del SSOT crean tablas, columnas y claves, pero no tienen cómo
+   declarar estas reglas.
+3. **Backend** (`src/backend/tenant.ts`): cada request corre como la empresa del usuario logueado (o
+   la del `?empresa=` en la página pública), y cada conexión a la base se marca con esa empresa.
+   La base solo devuelve sus filas, así que las consultas no filtran por empresa a mano.
+
+Para crear otra empresa con su administrador:
+
+```sh
+docker compose run --rm --no-deps backend npm run tenant:create -- <código> "<Nombre>" <usuario> <contraseña>
+```
+
+El primer administrador (el de `.env`) y los datos de ejemplo quedan en la empresa `default`.
 
 La lógica de negocio está en `src/backend/catering.ts` (API `/api/catering`, con
 sesión, y `/api/public`, sin sesión) y la exportación en `exportar.ts` y `xlsx.ts`;
@@ -102,11 +127,12 @@ Si se corre de nuevo, falla por datos duplicados y no cambia nada.
 
 - Panel de la empresa: <http://localhost:3001/>. Las planillas, **Inventario**, **Compras** y
   **Estadísticas** están en el menú ☰.
-- Página para clientes: <http://localhost:3001/pedido>.
+- Página para clientes de la empresa de ejemplo: <http://localhost:3001/pedido?empresa=default>.
+- El botón **Tema** (arriba a la derecha) alterna entre automático (el de la compu), claro y oscuro.
 
 Para probar el flujo completo:
 
-1. Hacé un pedido desde `/pedido`. Aparece solo en la planilla **Pedidos**.
+1. Hacé un pedido desde `/pedido?empresa=default`. Aparece solo en la planilla **Pedidos**.
 2. Cambiale el estado a `Confirmado`.
 3. En **Compras**, elegí el pedido, mirá qué hay que comprar y tocá **Registrar egreso**.
 4. En **Inventario** aparecen los platos del pedido: corregí las porciones que realmente se
@@ -132,6 +158,11 @@ Para probar el flujo completo:
 - **"No existe usuario con esas credenciales"**: el usuario inicial se crea solo con
   la base vacía. Si cambiaste el `.env` después, usá el usuario anterior o borrá la
   base con `docker compose down -v`.
+- **La migración `0011_multi_tenant` falla con un check**: cambia todas las claves (empresa
+  primero, nombres en vez de códigos), así que solo se aplica sobre tablas vacías. Una base
+  creada antes hay que borrarla con `docker compose down -v` y repetir los pasos 4 y 5.
+  La `0010_sin_referencias` quita antes las FKs, porque el generador las borraba después de
+  las PKs de las que dependen.
 
 ## Mantenerse al día con la clase
 
