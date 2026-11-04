@@ -4,6 +4,7 @@ import express from 'express';
 import {withTestDatabase} from './helpers/database.mjs';
 import {initializeUsers} from '../dist/backend/bootstrap.js';
 import {createAuthentication} from '../dist/backend/auth.js';
+import {createCustomerAuthentication, registerCustomerAuthApi} from '../dist/backend/customer-auth.js';
 import {anularMovimiento, cargarMovimientosEjemplo, opcionesInventario, cargarPedidosEjemplo, comprasDePedido, comprasDePeriodo, crearPedido, estadisticas, historialMovimientos,
     registerCateringApi, registrarMovimiento} from '../dist/backend/catering.js';
 import {registerEntityApi} from '../dist/backend/api.js';
@@ -230,8 +231,10 @@ test('the public API validates orders against the SSOT and business rules and ne
         await fixture(pool);
         await initializeUsers(pool, {username: 'catering-admin', password: 'catering-test-password'});
         const app = express(), auth = createAuthentication(pool, 'catering-test-secret-with-at-least-32-bytes');
+        const customerAuth = createCustomerAuthentication(pool, 'catering-test-secret-with-at-least-32-bytes');
         const published = [];
-        registerCateringApi(app, pool, auth, name => published.push(name));
+        registerCustomerAuthApi(app, pool, customerAuth);
+        registerCateringApi(app, pool, auth, customerAuth, name => published.push(name));
         registerEntityApi(app, pool, auth);
         const server = await new Promise(resolve => { const server = app.listen(0, '127.0.0.1', () => resolve(server)); });
         t.after(() => new Promise(resolve => server.close(resolve)));
@@ -242,6 +245,27 @@ test('the public API validates orders against the SSOT and business rules and ne
             method: 'POST', headers: {'Content-Type': 'application/json', ...(jwt ? {Authorization: `Bearer ${jwt}`} : {})}, body: JSON.stringify(body)});
         const enDias = dias => localDateTime(new Date(Date.now() + dias * 24 * 60 * 60 * 1000));
         const contar = async () => (await pool.query('SELECT count(*)::int AS n FROM ssot.pedidos')).rows[0].n;
+
+        const anonimo = await request('/api/public/pedidos', {...cliente, fecha_evento: enDias(5), personas: 10, cod_servicio: 'S'});
+        assert.equal(anonimo.status, 201);
+        const pedidoAnonimo = (await anonimo.json()).id;
+        assert.deepEqual((await pool.query('SELECT cliente_id FROM ssot.pedidos WHERE id = $1', [pedidoAnonimo])).rows,
+            [{cliente_id: null}]);
+        const registered = await request('/api/public/auth/register', {email: 'ANA@example.com', contrasena: 'customer-test-password'});
+        assert.equal(registered.status, 201);
+        const {token: customerToken, customer} = await registered.json();
+        assert.equal(customer.email, 'ana@example.com');
+        const vinculo = await request(`/api/public/mis-pedidos/${pedidoAnonimo}`, {}, customerToken);
+        assert.deepEqual(await vinculo.json(), {associated: true});
+        const historial = await request('/api/public/mis-pedidos', undefined, customerToken);
+        assert.equal(historial.status, 200);
+        assert.deepEqual((await historial.json()).map(pedido => pedido.id), [pedidoAnonimo]);
+        assert.deepEqual((await pool.query('SELECT cliente_id FROM ssot.pedidos WHERE id = $1', [pedidoAnonimo])).rows,
+            [{cliente_id: customer.id}]);
+        published.length = 0;
+        assert.equal((await request('/api/entities', undefined, customerToken)).status, 401);
+        assert.equal((await request('/api/catering/pedidos', undefined, customerToken)).status, 401);
+        assert.equal((await request('/api/public/pedidos', {...cliente, fecha_evento: enDias(5), personas: 10, cod_servicio: 'S'}, token)).status, 401);
 
         const catalogo = await (await request('/api/public/catalogo')).json();
         assert.deepEqual(catalogo, {
@@ -267,7 +291,7 @@ test('the public API validates orders against the SSOT and business rules and ne
             [{...valido, cliente_email: 'sin-arroba'}, /email/],
             [{...valido, fecha_evento: 'mañana'}, /fecha_evento/],
         ]) {
-            const response = await request('/api/public/pedidos', body);
+            const response = await request('/api/public/pedidos', body, customerToken);
             assert.equal(response.status, 400, JSON.stringify(body));
             assert.match((await response.json()).error, message);
         }
@@ -275,15 +299,16 @@ test('the public API validates orders against the SSOT and business rules and ne
         assert.deepEqual(published, []);
 
         // The server prices the order and copies the service's dishes into it.
-        const created = await request('/api/public/pedidos', valido);
+        const created = await request('/api/public/pedidos', valido, customerToken);
         assert.equal(created.status, 201);
         const {id, total} = await created.json();
         assert.equal(total, 5000);
         assert.deepEqual(published, ['pedidos', 'pedido_platos']);
-        assert.deepEqual((await pool.query('SELECT estado, cod_servicio, total FROM ssot.pedidos WHERE id = $1', [id])).rows, [{estado: 'Pendiente', cod_servicio: 'S', total: 5000}]);
+        assert.deepEqual((await pool.query('SELECT estado, cod_servicio, total, cliente_id FROM ssot.pedidos WHERE id = $1', [id])).rows,
+            [{estado: 'Pendiente', cod_servicio: 'S', total: 5000, cliente_id: customer.id}]);
         assert.deepEqual((await pool.query('SELECT cod_plato, porciones, precio_porcion FROM ssot.pedido_platos WHERE pedido = $1', [id])).rows,
             [{cod_plato: 'PAN', porciones: 20, precio_porcion: 100}]);
-        const carta = await request('/api/public/pedidos', {...cliente, fecha_evento: enDias(5), personas: 3, platos: [{cod_plato: 'PAN', porciones: 7}]});
+        const carta = await request('/api/public/pedidos', {...cliente, fecha_evento: enDias(5), personas: 3, platos: [{cod_plato: 'PAN', porciones: 7}]}, customerToken);
         assert.equal((await carta.json()).total, 700);
 
         // The uuid is the secret code; the status response holds no personal data.

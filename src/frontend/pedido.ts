@@ -1,6 +1,7 @@
-// Public order page: no account, the order's uuid is the code to check it later.
-import type {ApiError} from '../backend/browser-contract.js';
-import type {CatalogoResponse, CatalogoServicio, EstadoPedidoResponse, NuevoPedido, NuevoPedidoResponse} from '../backend/catering-contract.js';
+// Public catalog and status page; customer accounts are optional.
+import type {ApiError, CustomerLoginResponse} from '../backend/browser-contract.js';
+import type {CatalogoResponse, CatalogoServicio, EstadoPedidoResponse, NuevoPedido, NuevoPedidoResponse, PedidoCuenta,
+    PedidoLinkResponse} from '../backend/catering-contract.js';
 import {element} from './dom.js';
 import {messageOf} from './messages.js';
 
@@ -17,13 +18,15 @@ const fecha = $<HTMLInputElement>('#fecha');
 const contacto = $<HTMLFormElement>('#paso-contacto');
 
 let catalogo: CatalogoResponse;
+let tokenCliente: string | undefined;
+let pedidoConfirmadoId: string | undefined;
 let modo: 'servicio' | 'carta' = 'servicio';
 let servicio: CatalogoServicio | undefined;
 const porciones = new Map<string, number>();
 
-async function api<T>(path: string, body?: unknown): Promise<T> {
-    const response = await fetch(path, body === undefined ? {} : {
-        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
+async function api<T>(path: string, body?: unknown, token?: string): Promise<T> {
+    const response = await fetch(path, body === undefined ? {headers: token ? {Authorization: `Bearer ${token}`} : {}} : {
+        method: 'POST', headers: {'Content-Type': 'application/json', ...(token ? {Authorization: `Bearer ${token}`} : {})}, body: JSON.stringify(body),
     });
     if (!response.ok) {
         const failure = await response.json() as ApiError;
@@ -54,7 +57,7 @@ function minimoEvento(): string {
 
 function elegirModo(nuevo: typeof modo): void {
     modo = nuevo;
-    for (const button of document.querySelectorAll<HTMLButtonElement>('.mode-switch button')) {
+    for (const button of document.querySelectorAll<HTMLButtonElement>('[data-modo]')) {
         button.setAttribute('aria-pressed', String(button.dataset['modo'] === modo));
     }
     $('#servicios').hidden = modo !== 'servicio';
@@ -184,7 +187,7 @@ async function iniciar(): Promise<void> {
     catalogo = await api<CatalogoResponse>('/api/public/catalogo');
     tarjetasServicios();
     cartaPorCategoria();
-    for (const button of document.querySelectorAll<HTMLButtonElement>('.mode-switch button')) {
+    for (const button of document.querySelectorAll<HTMLButtonElement>('[data-modo]')) {
         button.onclick = () => elegirModo(button.dataset['modo'] as typeof modo);
     }
     $('#menu-siguiente').onclick = () => {
@@ -197,15 +200,115 @@ async function iniciar(): Promise<void> {
         mostrar('evento');
     };
     $<HTMLFormElement>('#paso-evento').onsubmit = event => { event.preventDefault(); mostrar('contacto'); };
-    contacto.onsubmit = event => { event.preventDefault(); resumen(); mostrar('resumen'); };
+    contacto.onsubmit = event => {
+        event.preventDefault();
+        resumen();
+        mostrar('resumen');
+    };
+    const seleccionarCuenta = (modoCuenta: 'login' | 'registro') => {
+        $('#cuenta-error').textContent = '';
+        for (const button of document.querySelectorAll<HTMLButtonElement>('[data-cuenta]')) {
+            button.setAttribute('aria-pressed', String(button.dataset['cuenta'] === modoCuenta));
+        }
+        $('#cuenta-login').hidden = modoCuenta !== 'login';
+        $('#cuenta-registro').hidden = modoCuenta !== 'registro';
+    };
+    for (const button of document.querySelectorAll<HTMLButtonElement>('[data-cuenta]')) {
+        button.onclick = () => seleccionarCuenta(button.dataset['cuenta'] as 'login' | 'registro');
+    }
+    for (const button of document.querySelectorAll<HTMLButtonElement>('.toggle-password')) {
+        button.onclick = () => {
+            const input = button.parentElement!.querySelector<HTMLInputElement>('input')!;
+            const visible = input.type === 'password';
+            input.type = visible ? 'text' : 'password';
+            button.querySelector('span')!.textContent = visible ? 'Ocultar' : 'Mostrar';
+            button.setAttribute('aria-label', visible ? 'Ocultar contraseña' : 'Mostrar contraseña');
+            button.setAttribute('aria-pressed', String(visible));
+        };
+    }
+    const cuentaDialog = $<HTMLDialogElement>('#cuenta-dialog');
+    const cerrarCuenta = () => cuentaDialog.close();
+    $('#cerrar-cuenta').onclick = cerrarCuenta;
+    $('#omitir-cuenta').onclick = cerrarCuenta;
+    const abrirCuenta = () => {
+        if (!tokenCliente) {
+            const email = String(new FormData(contacto).get('cliente_email') ?? '');
+            for (const form of [$<HTMLFormElement>('#cuenta-login'), $<HTMLFormElement>('#cuenta-registro')]) {
+                (form.elements.namedItem('email') as HTMLInputElement).value = email;
+            }
+        }
+        cuentaDialog.showModal();
+    };
+    $('#abrir-cuenta').onclick = abrirCuenta;
+
+    const cargarMisPedidos = async (sesion: CustomerLoginResponse) => {
+        tokenCliente = sesion.token;
+        let asociado = false;
+        let errorVinculo = '';
+        if (pedidoConfirmadoId) {
+            try {
+                const vinculo = await api<PedidoLinkResponse>(`/api/public/mis-pedidos/${encodeURIComponent(pedidoConfirmadoId)}`, {}, tokenCliente);
+                asociado = vinculo.associated;
+            } catch (failure) {
+                errorVinculo = failure instanceof Error ? failure.message : 'No pudimos asociar este pedido a tu cuenta.';
+            }
+        }
+        const pedidos = await api<PedidoCuenta[]>('/api/public/mis-pedidos', undefined, tokenCliente);
+        const aviso = $('#cuenta-pedido-aviso');
+        aviso.hidden = asociado && !errorVinculo;
+        aviso.textContent = errorVinculo || (asociado ? '' :
+            'Este pedido no se asoció porque el email del pedido no coincide con el de tu cuenta.');
+        const lista = $('#lista-pedidos');
+        if (!pedidos.length) {
+            lista.replaceChildren(element('p', 'Todavía no hay pedidos asociados a esta cuenta. Usá el mismo email del pedido para vincularlo.'));
+        } else {
+            lista.replaceChildren(...pedidos.map(item => {
+                const tarjeta = element('article');
+                const codigo = element('code', item.id);
+                const consultar = element('a', 'Consultar estado');
+                consultar.href = `/pedidos?codigo=${encodeURIComponent(item.id)}`;
+                tarjeta.append(element('p', `Pedido del ${fechaHora(item.fecha_evento)}`), codigo,
+                    element('p', `${item.personas} personas · ${pesos(item.total)} · ${item.estado}`), consultar);
+                return tarjeta;
+            }));
+        }
+        $('#cuenta-formulario').hidden = true;
+        $('#cuenta-pedidos').hidden = false;
+        $('#omitir-cuenta').textContent = 'Cerrar';
+        $('#titulo-cuenta').textContent = `Mis pedidos · ${sesion.customer.email}`;
+    };
+    $<HTMLFormElement>('#cuenta-login').onsubmit = async event => {
+        event.preventDefault();
+        const datos = new FormData(event.currentTarget as HTMLFormElement);
+        try {
+            await cargarMisPedidos(await api<CustomerLoginResponse>('/api/public/auth/login', {
+                email: datos.get('email'), contrasena: datos.get('contrasena'),
+            }));
+        } catch (failure) {
+            $('#cuenta-error').textContent = failure instanceof Error ? failure.message : 'No pudimos iniciar sesión.';
+        }
+    };
+    $<HTMLFormElement>('#cuenta-registro').onsubmit = async event => {
+        event.preventDefault();
+        const datos = new FormData(event.currentTarget as HTMLFormElement);
+        try {
+            await cargarMisPedidos(await api<CustomerLoginResponse>('/api/public/auth/register', {
+                email: datos.get('email'), contrasena: datos.get('contrasena'),
+            }));
+        } catch (failure) {
+            $('#cuenta-error').textContent = failure instanceof Error ? failure.message : 'No pudimos crear tu cuenta.';
+        }
+    };
     const confirmar = $<HTMLButtonElement>('#confirmar');
     confirmar.onclick = async () => {
         confirmar.disabled = true;
         try {
-            const {id} = await api<NuevoPedidoResponse>('/api/public/pedidos', pedido());
+            const {id} = await api<NuevoPedidoResponse>('/api/public/pedidos', pedido(), tokenCliente);
+            pedidoConfirmadoId = id;
             $('#codigo').textContent = id;
-            $<HTMLAnchorElement>('#link-consulta').href = `/pedido?codigo=${encodeURIComponent(id)}`;
+            $<HTMLAnchorElement>('#link-consulta').href = `/pedidos?codigo=${encodeURIComponent(id)}`;
             mostrar('listo');
+            abrirCuenta();
         } catch (failure) {
             error.textContent = failure instanceof Error ? failure.message : 'No pudimos registrar el pedido.';
         } finally { confirmar.disabled = false; }

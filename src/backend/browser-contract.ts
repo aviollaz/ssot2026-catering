@@ -40,4 +40,6 @@ export type DeleteDependencyCheck = {blockers: DeleteDependencyBlocker[]};
 export type ApiError = {error: string; problems?: readonly Problem[]};
 export type AuthenticatedUser = {id: string; usuario: string};
 export type LoginResponse = {token: string; expiresIn: number; user: AuthenticatedUser};
+export type AuthenticatedCustomer = {id: string; email: string};
+export type CustomerLoginResponse = {token: string; expiresIn: number; customer: AuthenticatedCustomer};
 export type RecoveryCodesResponse = {codes: string[]};

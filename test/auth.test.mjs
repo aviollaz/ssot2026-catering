@@ -3,6 +3,7 @@ import test from 'node:test';
 import express from 'express';
 import {SignJWT, decodeJwt} from 'jose';
 import {createAuthentication, registerAuthApi} from '../dist/backend/auth.js';
+import {createCustomerAuthentication, registerCustomerAuthApi} from '../dist/backend/customer-auth.js';
 import {registerEntityApi} from '../dist/backend/api.js';
 import {hashPassword, verifyPassword, createRecoveryCodes, hashRecoveryCode} from '../dist/backend/credentials.js';
 import {myContext} from '../dist/backend/system.js';
@@ -228,4 +229,75 @@ test('anonymous authentication operations limit repeated attempts', async t => {
     const response = await request('/api/auth/recover', 'POST', {}, '');
     assert.equal(response.status, 429);
     assert.ok(Number(response.headers.get('retry-after')) > 0);
+});
+
+test('customer registration and login use a separate account table and cannot authenticate as an administrator', async t => {
+    let customer;
+    const query = async (sql, values = []) => {
+        if (sql.startsWith('INSERT INTO "ssot"."clientes"')) {
+            if (customer?.email === values[0]) {
+                const error = new Error('duplicate');
+                error.code = '23505';
+                throw error;
+            }
+            const names = sql.match(/\(([^)]+)\)/)[1].split(', ').map(name => name.replaceAll('"', ''));
+            customer = Object.fromEntries(names.map((name, index) => [name, values[index]]));
+            return {rows: [], rowCount: 1};
+        }
+        if (sql.startsWith('SELECT "id", "email", "version_sesion", "contrasena_hash" FROM "ssot"."clientes"')) {
+            return {rows: customer?.email === values[0] ? [customer] : []};
+        }
+        if (sql.startsWith('SELECT "id", "email", "version_sesion" FROM "ssot"."clientes"')) {
+            return {rows: customer?.id === values[0] ? [customer] : []};
+        }
+        if (sql.startsWith('UPDATE "ssot"."clientes" SET "version_sesion"')) {
+            if (customer?.id === values[1]) customer.version_sesion = values[0];
+            return {rows: [], rowCount: customer?.id === values[1] ? 1 : 0};
+        }
+        throw new Error(`Unexpected query: ${sql}`);
+    };
+    const app = express(), pool = {query};
+    const customerAuth = createCustomerAuthentication(pool, secret);
+    const adminAuth = createAuthentication(pool, secret);
+    registerCustomerAuthApi(app, pool, customerAuth);
+    registerAuthApi(app, pool, adminAuth);
+    registerEntityApi(app, pool, adminAuth);
+    const server = await new Promise(resolve => {
+        const listening = app.listen(0, '127.0.0.1', () => resolve(listening));
+    });
+    t.after(() => new Promise(resolve => server.close(resolve)));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const request = (path, method = 'GET', body, jwt = '') => fetch(base + path, {method,
+        headers: {'Content-Type': 'application/json', ...(jwt ? {Authorization: `Bearer ${jwt}`} : {})},
+        ...(body === undefined ? {} : {body: JSON.stringify(body)}),
+    });
+
+    const registered = await request('/api/public/auth/register', 'POST',
+        {email: ' Customer@Example.com ', contrasena: password});
+    assert.equal(registered.status, 201);
+    assert.equal(registered.headers.get('cache-control'), 'no-store');
+    const account = await registered.json();
+    assert.deepEqual(account.customer, {id: customer.id, email: 'customer@example.com'});
+    assert.equal(account.expiresIn, 86400);
+    assert.equal((await request('/api/entities', 'GET', undefined, account.token)).status, 401);
+    assert.equal((await request('/api/auth/me', 'GET', undefined, account.token)).status, 401);
+    assert.equal(await verifyPassword(password, customer.contrasena_hash), true);
+    assert.ok(!JSON.stringify(account).includes(customer.contrasena_hash));
+
+    const duplicate = await request('/api/public/auth/register', 'POST',
+        {email: 'customer@example.com', contrasena: password});
+    assert.equal(duplicate.status, 409);
+    const login = await request('/api/public/auth/login', 'POST',
+        {email: 'CUSTOMER@example.com', contrasena: password});
+    assert.equal(login.status, 200);
+    assert.equal((await login.json()).customer.email, 'customer@example.com');
+    const invalid = await request('/api/public/auth/login', 'POST',
+        {email: 'missing@example.com', contrasena: password});
+    assert.equal(invalid.status, 401);
+    assert.deepEqual(await invalid.json(), {error: 'No existe una cuenta con esas credenciales.'});
+
+    const adminToken = (await adminAuth.issueToken(user)).token;
+    assert.equal((await request('/api/public/auth/me', 'GET', undefined, adminToken)).status, 401);
+    assert.equal((await request('/api/public/auth/logout', 'POST', {}, account.token)).status, 204);
+    assert.equal((await request('/api/public/auth/me', 'GET', undefined, account.token)).status, 401);
 });

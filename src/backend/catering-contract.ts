@@ -20,6 +20,8 @@ export type PedidoCliente = Pick<Pedido, 'cliente_nombre' | 'cliente_email' | 'c
 export type NuevoPedido = PedidoCliente & ({cod_servicio: string} | {platos: {cod_plato: string; porciones: number}[]});
 export type NuevoPedidoResponse = {id: string; total: number};
 export type EstadoPedidoResponse = Pick<Pedido, 'estado' | 'fecha_evento' | 'personas' | 'total'>;
+export type PedidoCuenta = Pick<Pedido, 'id' | 'estado' | 'fecha_evento' | 'personas' | 'total'>;
+export type PedidoLinkResponse = {associated: boolean};
 
 // Admin.
 export type PedidoPendiente = Pick<Pedido, 'id' | 'cliente_nombre' | 'fecha_evento' | 'personas' | 'estado'>;
