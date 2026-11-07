@@ -46,6 +46,7 @@ test('migration artifacts retain valid hashes and grant CRUD only when their tab
         '0007_update_schema': ['ingredientes', 'pedido_platos', 'pedidos', 'platos', 'recetas', 'servicio_platos', 'servicios'],
         '0008_receta_cantidad_decimal': [],
         '0009_update_schema': ['movimiento_ingredientes', 'movimiento_platos', 'movimientos', 'unidades'],
+        '0010_customer_accounts': ['clientes'],
     };
     for (let index = 0; index < catalog.releases.length; index++) value(await readCatalogState(root, catalog, index));
     for (const published of catalog.migrations) {
@@ -53,10 +54,14 @@ test('migration artifacts retain valid hashes and grant CRUD only when their tab
         const text = await readFile(join(migrationDirectory(root, published), verified.manifest.script.path), 'utf8');
         const tables = [...text.matchAll(/GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "ssot"\."([^"]+)" TO "ssot2026_user";/g)].map(match => match[1]).sort();
         assert.deepEqual(tables, expected[published.migration.id]);
-        assert.doesNotMatch(text, /^--/m);
+        if (published.migration.before.length === 0) assert.doesNotMatch(text, /^--/m);
         assert.doesNotMatch(text, /ALTER DEFAULT PRIVILEGES[^;]+\bGRANT\b/);
         assert.equal(published.migration.steps.some(step => step.id === 'app-permissions'), tables.length > 0);
         if (published.migration.id === '0001_initial') assert.match(text, /ALTER DEFAULT PRIVILEGES[^;]+\bREVOKE\b/);
+        if (published.migration.id === '0010_customer_accounts') {
+            assert.match(text, /ADD COLUMN "cliente_id" "pg_catalog"\."text";/);
+            assert.match(text, /FOREIGN KEY \("cliente_id"\) REFERENCES "ssot"\."clientes" \("id"\)/);
+        }
     }
 });
 

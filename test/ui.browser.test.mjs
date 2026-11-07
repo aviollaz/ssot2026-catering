@@ -6,6 +6,7 @@ import {withTestDatabase} from './helpers/database.mjs';
 import {withBrowser, until} from './helpers/browser.mjs';
 import {initializeUsers} from '../dist/backend/bootstrap.js';
 import {createAuthentication, registerAuthApi} from '../dist/backend/auth.js';
+import {createCustomerAuthentication, registerCustomerAuthApi} from '../dist/backend/customer-auth.js';
 import {registerEntityApi} from '../dist/backend/api.js';
 import {registerEntityEvents} from '../dist/backend/entity-events.js';
 import {registerCateringApi} from '../dist/backend/catering.js';
@@ -22,12 +23,14 @@ test('table navigation and spreadsheet work with the real API', {timeout: 90000}
             VALUES ('00000000-0000-4000-8000-000000000001', 'Ana', 'ana@example.com', '1', 'Calle 1', '2026-11-12 20:00', 40, 'Confirmado', 'COCTEL', 40000, NULL, '2026-10-01 10:00')`);
         await pool.query("INSERT INTO ssot.pedido_platos (pedido, cod_plato, porciones, precio_porcion) VALUES ('00000000-0000-4000-8000-000000000001', 'EMP', 120, 900)");
         const app = express(), auth = createAuthentication(pool, 'browser-test-secret-with-at-least-32-bytes');
+        const customerAuth = createCustomerAuthentication(pool, 'browser-test-secret-with-at-least-32-bytes');
         const loginRequests = [];
         app.use('/api/auth/login', (req, _res, next) => { loginRequests.push(req.method); next(); });
         const publish = registerEntityEvents(app, auth);
         registerAuthApi(app, pool, auth);
+        registerCustomerAuthApi(app, pool, customerAuth);
         registerEntityApi(app, pool, auth, publish);
-        registerCateringApi(app, pool, auth, publish);
+        registerCateringApi(app, pool, auth, customerAuth, publish);
         app.use('/assets', express.static('dist/frontend'));
         app.use(express.static('src/frontend/public'));
         const server = await new Promise(resolve => { const server = app.listen(0, '127.0.0.1', () => resolve(server)); });
@@ -236,7 +239,7 @@ test('table navigation and spreadsheet work with the real API', {timeout: 90000}
                 assert.equal(await evaluate("return document.querySelector('#account').matches(':modal') && !document.querySelector('#account-management').hidden && document.querySelector('#authentication').hidden"), true);
                 await evaluate("document.querySelector('#close-account').click(); window.dispatchEvent(new Event('sessionexpired'))");
                 assert.equal(await evaluate("return !document.querySelector('#authentication').hidden && !document.querySelector('#identity-form').hidden && document.querySelector('#workspace').hidden && document.querySelector('#login-user').value === '' && !document.querySelector('dialog[open]')"), true);
-                // The public page places an order without an account and shows its code.
+                // The public page confirms the order first and offers an optional customer account.
                 await send('Page.navigate', {url: `http://127.0.0.1:${server.address().port}/pedido.html`});
                 await until(() => evaluate("return !!document.querySelector('.card.service')"));
                 await evaluate(`document.querySelector('.card.service').click(); document.querySelector('#menu-siguiente').click();
@@ -245,11 +248,25 @@ test('table navigation and spreadsheet work with the real API', {timeout: 90000}
                     const contact = document.querySelector('#paso-contacto');
                     for (const [name, value] of Object.entries({cliente_nombre: 'Laura', cliente_email: 'laura@example.com', cliente_telefono: '1', direccion: 'Calle 2'})) contact.elements[name].value = value;
                     contact.requestSubmit();`);
+                assert.equal(await evaluate("return !document.querySelector('#paso-resumen').hidden"), true);
                 assert.match(await evaluate("return document.querySelector('#resumen .total').textContent"), /12\.000/);
                 await evaluate("document.querySelector('#confirmar').click()");
-                await until(() => evaluate("return !document.querySelector('#paso-listo').hidden"));
+                await until(() => evaluate("return !document.querySelector('#paso-listo').hidden && document.querySelector('#cuenta-dialog').open"));
                 const code = await evaluate("return document.querySelector('#codigo').textContent");
-                assert.deepEqual((await pool.query('SELECT estado, total, personas FROM ssot.pedidos WHERE id = $1', [code])).rows, [{estado: 'Pendiente', total: 12000, personas: 12}]);
+                assert.deepEqual((await pool.query('SELECT estado, total, personas, cliente_id FROM ssot.pedidos WHERE id = $1', [code])).rows,
+                    [{estado: 'Pendiente', total: 12000, personas: 12, cliente_id: null}]);
+                await evaluate("document.querySelector('#omitir-cuenta').click()");
+                await until(() => evaluate("return !document.querySelector('#cuenta-dialog').open"));
+                await evaluate("document.querySelector('#abrir-cuenta').click()");
+                await until(() => evaluate("return document.querySelector('#cuenta-dialog').open"));
+                await evaluate(`const account = document.querySelector('#cuenta-registro');
+                    account.elements.email.value = 'laura@example.com';
+                    account.elements.contrasena.value = 'customer-test-password';
+                    account.requestSubmit();`);
+                await until(() => evaluate("return !document.querySelector('#cuenta-pedidos').hidden"));
+                assert.deepEqual((await pool.query('SELECT estado, total, personas, cliente_id FROM ssot.pedidos WHERE id = $1', [code])).rows,
+                    [{estado: 'Pendiente', total: 12000, personas: 12,
+                        cliente_id: (await pool.query("SELECT id FROM ssot.clientes WHERE email = 'laura@example.com'")).rows[0].id}]);
                 assert.deepEqual((await pool.query('SELECT cod_plato, porciones FROM ssot.pedido_platos WHERE pedido = $1', [code])).rows, [{cod_plato: 'EMP', porciones: 36}]);
                 assert.deepEqual(errors, []);
             });

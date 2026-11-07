@@ -48,7 +48,7 @@
             <h2 id="titulo-contacto">Tus datos</h2>
             <div class="grid">
                 <label>Nombre y apellido<input name="cliente_nombre" autocomplete="name" maxlength="100" required></label>
-                <label>Email<input name="cliente_email" type="email" autocomplete="email" maxlength="100" required></label>
+                <label>Email<input name="cliente_email" type="email" autocomplete="email" maxlength="254" required></label>
                 <label>Teléfono<input name="cliente_telefono" type="tel" autocomplete="tel" maxlength="40" required></label>
                 <label>Dirección del evento<input name="direccion" autocomplete="street-address" maxlength="150" required></label>
             </div>
@@ -67,18 +67,66 @@
             <h2 id="titulo-listo">¡Recibimos tu pedido!</h2>
             <p>Guardá este código para consultar el estado cuando quieras:</p>
             <p><code id="codigo"></code></p>
-            <p><a id="link-consulta" href="/pedido">Ver el estado de mi pedido</a></p>
+            <p><a id="link-consulta" href="/pedidos">Ver el estado de mi pedido</a></p>
+            <p class="hint">Si querés, creá una cuenta o iniciá sesión para ver todos tus pedidos juntos.</p>
+            <button type="button" id="abrir-cuenta" class="primary">Ingresar o crear cuenta</button>
         </section>
 
         <section id="paso-consulta" class="step" aria-labelledby="titulo-consulta" hidden>
             <h2 id="titulo-consulta">Estado de tu pedido</h2>
             <div id="consulta-resultado" class="summary"></div>
-            <p><a href="/pedido">Hacer otro pedido</a></p>
+            <p><a href="/pedidos">Hacer otro pedido</a></p>
         </section>
     </main>
 
+    <dialog id="cuenta-dialog" aria-labelledby="titulo-cuenta">
+        <button type="button" id="cerrar-cuenta" class="dialog-close" aria-label="Cerrar">×</button>
+        <h2 id="titulo-cuenta">Tus pedidos, en un solo lugar</h2>
+        <div id="cuenta-formulario">
+            <p class="hint">Usá el mismo email que ingresaste en el pedido para asociarlo a tu cuenta.</p>
+            <p id="cuenta-error" class="error" role="alert"></p>
+            <div class="mode-switch" role="group" aria-label="Acceso a tu cuenta">
+                <button type="button" data-cuenta="login" aria-pressed="true">Iniciar sesión</button>
+                <button type="button" data-cuenta="registro" aria-pressed="false">Registrarme</button>
+            </div>
+            <form id="cuenta-login">
+                <label>Email<input name="email" type="email" autocomplete="email" placeholder="pepito@gmail.com" required></label>
+                <label>Contraseña
+                    <span class="password-field">
+                        <input name="contrasena" type="password" autocomplete="current-password" required>
+                        <button type="button" class="toggle-password" aria-label="Mostrar contraseña" aria-pressed="false">
+                            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+                            <span>Mostrar</span>
+                        </button>
+                    </span>
+                </label>
+                <div class="nav"><button type="submit" class="primary">Iniciar sesión</button></div>
+            </form>
+            <form id="cuenta-registro" hidden>
+                <label>Email<input name="email" type="email" autocomplete="email" placeholder="pepito@gmail.com" required></label>
+                <label>Contraseña
+                    <span class="password-field">
+                        <input name="contrasena" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+                        <button type="button" class="toggle-password" aria-label="Mostrar contraseña" aria-pressed="false">
+                            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+                            <span>Mostrar</span>
+                        </button>
+                    </span>
+                </label>
+                <p class="hint password-hint">La contraseña debe tener entre 12 y 128 caracteres. No requiere números ni caracteres especiales.</p>
+                <div class="nav"><button type="submit" class="primary">Crear cuenta</button></div>
+            </form>
+        </div>
+        <section id="cuenta-pedidos" aria-labelledby="titulo-mis-pedidos" hidden>
+            <h3 id="titulo-mis-pedidos">Mis pedidos</h3>
+            <p id="cuenta-pedido-aviso" class="hint" hidden></p>
+            <div id="lista-pedidos" class="order-history"></div>
+        </section>
+        <div class="dialog-actions"><button type="button" id="omitir-cuenta">Ahora no</button></div>
+    </dialog>
+
     <footer>
-        <form id="buscar" action="/pedido">
+        <form id="buscar" action="/pedidos">
             <label>¿Ya hiciste un pedido? <input name="codigo" placeholder="Código de pedido" required spellcheck="false" autocomplete="off"></label>
             <button type="submit">Consultar</button>
         </form>
