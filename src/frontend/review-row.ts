@@ -2,7 +2,7 @@ import type {EntityResponse} from '../backend/browser-contract.js';
 import type {Row, Value} from './row-editor.js';
 import {element} from './dom.js';
 
-// `details` are extra sections shown below the fields, such as an order's dishes.
+// `details` are extra sections shown below the fields, such as the rows that reference this one.
 export function reviewRow(entity: EntityResponse, original: Row, draft: Readonly<Record<string, Value>>, current?: Row, ...details: Node[]): void {
     const dialog = element('dialog');
     dialog.className = 'review-dialog';

@@ -1,10 +1,9 @@
-// Protocol of the catering endpoints, shared by the backend and both frontends.
+// Protocol of the catering endpoints, shared by the backend and the public order page.
 import type {StoredRow} from './api-contract.js';
 
 type Plato = StoredRow<'platos'>;
 type Servicio = StoredRow<'servicios'>;
 type Pedido = StoredRow<'pedidos'>;
-type Ingrediente = StoredRow<'ingredientes'>;
 
 // Public, without login: only fields a customer may see.
 export type CatalogoPlato = Pick<Plato, 'cod_plato' | 'nombre' | 'descripcion' | 'categoria' | 'precio_porcion'>;
@@ -20,17 +19,3 @@ export type NuevoPedido = PedidoCliente & ({cod_servicio: string} | {platos: {co
 export type NuevoPedidoResponse = {id: string; total: number};
 export type EstadoPedidoResponse = Pick<Pedido, 'estado' | 'fecha_evento' | 'personas' | 'total'>;
 
-// Admin.
-export type PedidoPendiente = Pick<Pedido, 'id' | 'cliente_nombre' | 'fecha_evento' | 'personas' | 'estado'>;
-export type CompraIngrediente = Pick<Ingrediente, 'cod_ing' | 'nombre' | 'unidad'> & {
-    // necesidad: what this order (or period) uses; consumo_previo: what earlier confirmed orders use first;
-    // faltante: what is missing for this order and the earlier ones together; comprar: this order's share of it.
-    stock: number; necesidad: number; consumo_previo: number; faltante: number; comprar: number;
-};
-export type ComprasResponse = {ingredientes: CompraIngrediente[]};
-export type EntregaResponse = {consumo: {cod_ing: string; cantidad: number}[]};
-export type EstadisticasResponse = {
-    porEstado: {estado: Pedido['estado']; pedidos: number}[];
-    porMes: {mes: string; pedidos: number; facturacion: number; personas: number}[];
-    platosMasPedidos: {cod_plato: string; nombre: string; porciones: number; pedidos: number}[];
-};

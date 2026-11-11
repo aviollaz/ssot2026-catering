@@ -103,12 +103,9 @@ Lo que difiere del plan o lo precisa, para tenerlo en cuenta al presentar o al t
 - **Pedidos de ejemplo** en `examples/data/pedidos.json`. Su `id` lo genera el servidor, así que no pueden ir en un `.tab` junto con `pedido_platos`. Se cargan con la misma función que usa la API pública (`crearPedido`), sin la regla de anticipación.
 - **Precio de un servicio**: se cobra `precio_persona × personas`. Los platos copiados a `pedido_platos` guardan igual su precio por porción, como registro.
 - **Validador de `pedidos`**: además de personas ≥ 1, valida que el email tenga `@`.
+- **Sin vistas propias en el panel de la empresa**: el gestor de la clase no se puede modificar para un negocio en particular. Las vistas Compras y Estadísticas (secciones 4 y 5, con `/api/catering`) se sacaron y quedaron en la rama `catering-completo`. Lo genérico se propuso a la clase: filas alternadas (ari-dc-uba-ar/ssot2026#42) y las filas que referencian al registro en "Ver datos actuales" (ari-dc-uba-ar/ssot2026#41), que reemplaza la lista de platos del pedido.
 - **Puntos de enganche en archivos compartidos**:
-  - `server.ts`: registro de la API y ruta `/pedido`.
-  - `main.ts`: vistas Compras y Estadísticas en el menú lateral.
-  - `api.ts`: `cateringRequest`.
+  - `server.ts`: registro de la API pública y ruta `/pedido`.
   - `auth.ts`: se exporta el rate limit.
-  - `sheet-layout.ts`: busca solo la tabla de la planilla.
-  - `index.html`: título y `catering.css`.
-- **Tests**: los de la clase se adaptaron a las entidades nuevas con la misma intención. `test/catering.integration.test.mjs` cubre el plan, y el test de UI recorre además Compras, Estadísticas y la página pública. Los dos tests de `test:assessment` que ya fallaban antes (insertaban `NULL` en una PK de `materias`) ahora pasan sobre `platos.descripcion`.
-- **Datos de ejemplo**: el pedido de Ana (Confirmado, 12/11) compra 9 huevos y 0 g de queso. El de Bruno (Confirmado, 20/11) compra 28 huevos y 2500 g de queso, porque el stock lo consume primero el pedido de Ana.
+  - `main.ts`, `review-row.ts`, `style.css`: las dos features genéricas de arriba (`related-rows.ts`).
+- **Tests**: los de la clase se adaptaron a las entidades nuevas con la misma intención. `test/catering.integration.test.mjs` cubre la API pública y los pedidos de ejemplo, y el test de UI recorre además el diálogo de un pedido y la página pública. Los dos tests de `test:assessment` que ya fallaban antes (insertaban `NULL` en una PK de `materias`) ahora pasan sobre `platos.descripcion`.

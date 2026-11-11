@@ -5,17 +5,15 @@ import {completeEntity} from 'system-definition';
 import {myContext, myEntities} from './system.js';
 import type {EntityName, StoredRow} from './api-contract.js';
 import {ApiFailure, apiErrorHandler, readObject} from './api-errors.js';
-import {authenticationLimit, type Authentication} from './auth.js';
+import {authenticationLimit} from './auth.js';
 import {entityTable, insertPreparedRow, prepareEntityWrite} from './entity-write.js';
 import {cateringConfig} from './catering-config.js';
-import type {CatalogoResponse, ComprasResponse, EntregaResponse, EstadisticasResponse, EstadoPedidoResponse,
-    NuevoPedidoResponse, PedidoPendiente} from './catering-contract.js';
+import type {CatalogoResponse, EstadoPedidoResponse, NuevoPedidoResponse} from './catering-contract.js';
 
 type Db = Pick<Pool, 'query' | 'connect'>;
 type EstadoPedido = StoredRow<'pedidos'>['estado'];
 const T = {
-    ingredientes: entityTable('ingredientes'), platos: entityTable('platos'), recetas: entityTable('recetas'),
-    servicios: entityTable('servicios'), servicio_platos: entityTable('servicio_platos'),
+    platos: entityTable('platos'), servicios: entityTable('servicios'), servicio_platos: entityTable('servicio_platos'),
     pedidos: entityTable('pedidos'), pedido_platos: entityTable('pedido_platos'),
 };
 const pedidos = completeEntity(myContext, myEntities.pedidos);
@@ -33,96 +31,6 @@ async function enTransaccion<T>(db: Db, work: (client: PoolClient) => Promise<T>
         await client.query('ROLLBACK');
         throw error;
     } finally { client.release(); }
-}
-
-// Ingredient need of each order: portions × recipe quantity / portions the recipe yields.
-const necesidadSql = (condicion: string) => `
-    SELECT pe.id AS pedido, pe.fecha_evento, r.cod_ing,
-           SUM(pp.porciones * r.cantidad::numeric / pl.porciones_receta) AS necesidad
-    FROM ${T.pedidos} pe
-    JOIN ${T.pedido_platos} pp ON pp.pedido = pe.id
-    JOIN ${T.platos} pl ON pl.cod_plato = pp.cod_plato
-    JOIN ${T.recetas} r ON r.cod_plato = pp.cod_plato
-    WHERE ${condicion}
-    GROUP BY pe.id, pe.fecha_evento, r.cod_ing`;
-
-/* Stock goes first to the earliest confirmed orders. With acum = the need of this order plus all
-   earlier ones, the order buys only its own shortfall: max(0, acum − stock) − max(0, previous − stock).
-   Delivered orders already left the stock; pending and cancelled ones reserve nothing. */
-export async function comprasDePedido(db: Pick<Pool, 'query'>, id: string): Promise<ComprasResponse> {
-    const existe = await db.query(`SELECT 1 FROM ${T.pedidos} WHERE id = $1`, [id]);
-    if (!existe.rowCount) throw new ApiFailure(404, 'El pedido no existe.');
-    const {rows} = await db.query(`
-        WITH necesidad AS (${necesidadSql(`pe.estado = 'Confirmado' OR pe.id = $1`)}),
-        acumulado AS (
-            SELECT *, SUM(necesidad) OVER (PARTITION BY cod_ing ORDER BY fecha_evento, pedido) AS acum FROM necesidad
-        )
-        SELECT i.cod_ing, i.nombre, i.unidad, i.stock_actual AS stock,
-               CEIL(a.necesidad)::int AS necesidad,
-               CEIL(a.acum - a.necesidad)::int AS consumo_previo,
-               CEIL(GREATEST(0, a.acum - i.stock_actual))::int AS faltante,
-               CEIL(GREATEST(0, a.acum - i.stock_actual) - GREATEST(0, a.acum - a.necesidad - i.stock_actual))::int AS comprar
-        FROM acumulado a JOIN ${T.ingredientes} i ON i.cod_ing = a.cod_ing
-        WHERE a.pedido = $1
-        ORDER BY i.nombre, i.cod_ing`, [id]);
-    return {ingredientes: rows};
-}
-
-// The same allocation for every confirmed order of a period (both dates included).
-export async function comprasDePeriodo(db: Pick<Pool, 'query'>, desde: string, hasta: string): Promise<ComprasResponse> {
-    const {rows} = await db.query(`
-        WITH necesidad AS (${necesidadSql(`pe.estado = 'Confirmado' AND pe.fecha_evento < $2::date + 1`)}),
-        por_ingrediente AS (
-            SELECT cod_ing,
-                   COALESCE(SUM(necesidad) FILTER (WHERE fecha_evento < $1::date), 0) AS previo,
-                   COALESCE(SUM(necesidad) FILTER (WHERE fecha_evento >= $1::date), 0) AS periodo
-            FROM necesidad GROUP BY cod_ing
-        )
-        SELECT i.cod_ing, i.nombre, i.unidad, i.stock_actual AS stock,
-               CEIL(n.periodo)::int AS necesidad,
-               CEIL(n.previo)::int AS consumo_previo,
-               CEIL(GREATEST(0, n.previo + n.periodo - i.stock_actual))::int AS faltante,
-               CEIL(GREATEST(0, n.previo + n.periodo - i.stock_actual) - GREATEST(0, n.previo - i.stock_actual))::int AS comprar
-        FROM por_ingrediente n JOIN ${T.ingredientes} i ON i.cod_ing = n.cod_ing
-        WHERE n.periodo > 0
-        ORDER BY i.nombre, i.cod_ing`, [desde, hasta]);
-    return {ingredientes: rows};
-}
-
-// Marks a confirmed order as delivered and takes its consumption out of the stock, atomically.
-export async function entregarPedido(db: Db, id: string): Promise<EntregaResponse> {
-    return enTransaccion(db, async client => {
-        const {rows} = await client.query<{estado: EstadoPedido}>(`SELECT estado FROM ${T.pedidos} WHERE id = $1 FOR UPDATE`, [id]);
-        if (!rows[0]) throw new ApiFailure(404, 'El pedido no existe.');
-        if (rows[0].estado !== 'Confirmado') throw new ApiFailure(409, 'Solo se pueden entregar pedidos confirmados.');
-        // Stock never goes below 0: a missing purchase that was never loaded cannot be consumed twice.
-        const consumo = await client.query<{cod_ing: string; cantidad: number}>(`
-            UPDATE ${T.ingredientes} i SET stock_actual = GREATEST(0, i.stock_actual - c.cantidad)
-            FROM (SELECT cod_ing, CEIL(necesidad)::int AS cantidad FROM (${necesidadSql('pe.id = $1')}) n) c
-            WHERE i.cod_ing = c.cod_ing
-            RETURNING c.cod_ing, c.cantidad`, [id]);
-        await client.query(`UPDATE ${T.pedidos} SET estado = 'Entregado' WHERE id = $1`, [id]);
-        return {consumo: consumo.rows.sort((a, b) => a.cod_ing.localeCompare(b.cod_ing))};
-    });
-}
-
-export async function estadisticas(db: Pick<Pool, 'query'>): Promise<EstadisticasResponse> {
-    const porEstado = await db.query(`SELECT estado, count(*)::int AS pedidos FROM ${T.pedidos} GROUP BY estado ORDER BY estado`);
-    const porMes = await db.query(`
-        SELECT to_char(fecha_evento, 'YYYY-MM') AS mes, count(*)::int AS pedidos,
-               SUM(total)::float8 AS facturacion, SUM(personas)::int AS personas
-        FROM ${T.pedidos} WHERE estado IN ('Confirmado', 'Entregado')
-        GROUP BY mes ORDER BY mes`);
-    const platos = await db.query(`
-        SELECT pl.cod_plato, pl.nombre, SUM(pp.porciones)::int AS porciones, count(*)::int AS pedidos
-        FROM ${T.pedido_platos} pp
-        JOIN ${T.pedidos} pe ON pe.id = pp.pedido
-        JOIN ${T.platos} pl ON pl.cod_plato = pp.cod_plato
-        WHERE pe.estado <> 'Cancelado'
-        GROUP BY pl.cod_plato, pl.nombre
-        ORDER BY porciones DESC, pl.nombre
-        LIMIT 10`);
-    return {porEstado: porEstado.rows, porMes: porMes.rows, platosMasPedidos: platos.rows};
 }
 
 export async function catalogo(db: Pick<Pool, 'query'>): Promise<CatalogoResponse> {
@@ -225,38 +133,7 @@ function readId(value: unknown): string {
     return value;
 }
 
-function readDate(value: unknown): string {
-    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(value))) {
-        throw new ApiFailure(400, 'Indicá las fechas como AAAA-MM-DD.');
-    }
-    return value;
-}
-
-export function registerCateringApi(app: Express, pool: Db, auth: Authentication, publish: (name: EntityName) => void = () => {}): void {
-    const admin = express.Router();
-    admin.use(auth.requireUser);
-    admin.use(express.json({limit: '8kb'}));
-    admin.get('/pedidos', async (_req, res) => {
-        const {rows} = await pool.query<PedidoPendiente>(`SELECT id, cliente_nombre, fecha_evento, personas, estado FROM ${T.pedidos}
-            WHERE estado IN ('Pendiente', 'Confirmado') ORDER BY fecha_evento, id`);
-        res.json(rows);
-    });
-    admin.get('/pedidos/:id/compras', async (req, res) => { res.json(await comprasDePedido(pool, readId(req.params['id']))); });
-    admin.post('/pedidos/:id/entregar', async (req, res) => {
-        const result = await entregarPedido(pool, readId(req.params['id']));
-        publish('pedidos');
-        publish('ingredientes');
-        res.json(result);
-    });
-    admin.get('/compras', async (req, res) => {
-        const query = readObject(req.query, ['desde', 'hasta']);
-        res.json(await comprasDePeriodo(pool, readDate(query['desde']), readDate(query['hasta'])));
-    });
-    admin.get('/estadisticas', async (_req, res) => { res.json(await estadisticas(pool)); });
-    admin.use((_req, res) => { res.status(404).json({error: 'Operación desconocida.'}); });
-    admin.use(apiErrorHandler);
-    app.use('/api/catering', admin);
-
+export function registerPublicApi(app: Express, pool: Db, publish: (name: EntityName) => void = () => {}): void {
     // Without login: the catalog, placing an order and checking it by its secret code (the uuid).
     const pub = express.Router();
     pub.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });

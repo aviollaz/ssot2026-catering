@@ -3,18 +3,21 @@
 TP grupal sobre el repo de la clase: un gestor para empresas de catering (plan en
 [docs/plan-catering.md](docs/plan-catering.md)).
 
-- **Panel de la empresa** (`/`, con login): planillas generadas desde la SSOT para
-  ingredientes, platos, recetas, servicios y pedidos, más dos vistas propias en el
-  menú lateral: **Compras** (qué comprar para cada pedido o período, y "Marcar
-  entregado", que descuenta el stock) y **Estadísticas**.
+- **Panel de la empresa** (`/`, con login): el gestor genérico de la clase, con las
+  planillas que genera la SSOT para ingredientes, platos, recetas, servicios y
+  pedidos. No tiene vistas propias: solo features genéricas que también se
+  propusieron a la clase (filas alternadas y, en "Ver datos actuales", las filas que
+  referencian al registro, como los platos de un pedido o las recetas de un plato).
 - **Página para clientes** (`/pedido`, sin cuenta): elegir un menú armado o platos a
   la carta, fecha, personas y datos de contacto; devuelve un código para consultar
   el estado en `/pedido?codigo=…`.
 
-La lógica de negocio está en `src/backend/catering.ts` (API `/api/catering`, con
-sesión, y `/api/public`, sin sesión), y el frontend en `src/frontend/compras.ts`,
-`estadisticas.ts` y `pedido.ts`. `npm run test:catering` prueba el cálculo de
-compras, la entrega y la API pública contra una base aislada.
+La lógica de la página de clientes está en `src/backend/catering.ts` (API
+`/api/public`, sin sesión) y `src/frontend/pedido.ts`. `npm run test:catering` prueba
+la API pública y la carga de pedidos de ejemplo contra una base aislada.
+
+La versión anterior, con las vistas **Compras** y **Estadísticas** dentro del panel de
+la empresa, quedó en la rama `catering-completo`.
 
 ## Cómo ejecutarlo, paso a paso (con Docker)
 
@@ -90,16 +93,14 @@ Si se corre de nuevo, falla por datos duplicados y no cambia nada.
 
 ### 6. Usarlo
 
-- Panel de la empresa: <http://localhost:3001/>. Las planillas, **Compras** y
-  **Estadísticas** están en el menú ☰.
+- Panel de la empresa: <http://localhost:3001/>. Las planillas están en el menú ☰.
 - Página para clientes: <http://localhost:3001/pedido>.
 
 Para probar el flujo completo:
 
 1. Hacé un pedido desde `/pedido`. Aparece solo en la planilla **Pedidos**.
 2. Cambiale el estado a `Confirmado`.
-3. En **Compras**, elegí el pedido, mirá qué hay que comprar y tocá **Marcar entregado**.
-4. En **Ingredientes**, el stock tiene que haber bajado.
+3. Tocá **Ver datos actuales** en el pedido: abajo aparecen sus platos.
 
 ### Uso diario
 

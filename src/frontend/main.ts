@@ -7,17 +7,12 @@ import {element} from './dom.js';
 import {actionButton, setActionLabel} from './action-button.js';
 import {createTableNavigation} from './table-navigation.js';
 import {reviewRow} from './review-row.js';
-import {pedidoPlatos} from './pedido-platos.js';
+import {relatedRows} from './related-rows.js';
 import {initializeAuthentication} from './auth-ui.js';
 import {loadReferenceSources, type LoadedReferenceSource} from './reference-sources.js';
 import {confirmAction, showDeleteDependencies} from './confirm.js';
 import {scrollCue, updateScrollCues} from './sheet-scroll.js';
 import {createRowEditor, type RowEditor, type Row, type Value} from './row-editor.js';
-import {comprasView} from './compras.js';
-import {estadisticasView} from './estadisticas.js';
-
-// Catering views listed after the spreadsheets in the drawer.
-const cateringViews = [comprasView, estadisticasView];
 
 let labels: Readonly<Record<string, string>> = {};
 
@@ -93,13 +88,6 @@ async function show(name: EntityName): Promise<void> {
     const generation = ++viewGeneration;
     invalidateView = () => {};
     resumeLive = () => {};
-    const view = cateringViews.find(candidate => candidate.name === name);
-    if (view) {
-        canLeaveView = async () => true;
-        const invalidate = await view.show(content);
-        if (generation === viewGeneration) invalidateView = invalidate;
-        return;
-    }
     let entity: EntityResponse;
     let sources: LoadedReferenceSource[];
     for (;;) {
@@ -461,7 +449,7 @@ async function show(name: EntityName): Promise<void> {
                 cache.invalidate(name);
                 const query = {where: rowKey(entity, row)} as EntityQuery;
                 const current = entityPage(await load(name, query), query).rows[0];
-                reviewRow(entity, row, editors.get(row)!.read(), current, ...name === 'pedidos' ? [await pedidoPlatos(row)] : []);
+                reviewRow(entity, row, editors.get(row)!.read(), current, ...await relatedRows(entity, row, Object.keys(labels), load));
             })));
         });
         for (const row of table.rows) {
@@ -510,7 +498,7 @@ initializeAuthentication(active => {
         if (!isAuthenticated()) return;
         allEntities = catalog.map(entity => entity.name);
         labels = Object.fromEntries(catalog.map(entity => [entity.name, entity.label]));
-        navigation.catalog([...catalog, ...cateringViews.map(({name, label}) => ({name, label}))]);
+        navigation.catalog(catalog);
         if (allEntities[0]) await selectTab(allEntities[0]);
         else content.textContent = 'No hay planillas disponibles.';
         stopWatching = watchEntities(name => { cache.invalidate(name); invalidateView(name); });

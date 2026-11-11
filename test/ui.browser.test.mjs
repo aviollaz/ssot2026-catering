@@ -8,7 +8,7 @@ import {initializeUsers} from '../dist/backend/bootstrap.js';
 import {createAuthentication, registerAuthApi} from '../dist/backend/auth.js';
 import {registerEntityApi} from '../dist/backend/api.js';
 import {registerEntityEvents} from '../dist/backend/entity-events.js';
-import {registerCateringApi} from '../dist/backend/catering.js';
+import {registerPublicApi} from '../dist/backend/catering.js';
 
 test('table navigation and spreadsheet work with the real API', {timeout: 90000}, async () => {
     await withTestDatabase(async ({pool}) => {
@@ -27,7 +27,7 @@ test('table navigation and spreadsheet work with the real API', {timeout: 90000}
         const publish = registerEntityEvents(app, auth);
         registerAuthApi(app, pool, auth);
         registerEntityApi(app, pool, auth, publish);
-        registerCateringApi(app, pool, auth, publish);
+        registerPublicApi(app, pool, publish);
         app.use('/assets', express.static('dist/frontend'));
         app.use(express.static('src/frontend/public'));
         const server = await new Promise(resolve => { const server = app.listen(0, '127.0.0.1', () => resolve(server)); });
@@ -202,27 +202,14 @@ test('table navigation and spreadsheet work with the real API', {timeout: 90000}
                         await writeFile(`${process.env.UI_SCREENSHOT}.${entity}.png`, Buffer.from(data, 'base64'));
                     }
                 }
-                // Catering views share the drawer: purchases for the confirmed order, its delivery, and statistics.
                 await send('Emulation.setDeviceMetricsOverride', {width: 1440, height: 900, deviceScaleFactor: 1, mobile: false});
-                // An order's details list its dishes too, and the whole dialog fits without scrolling.
+                // An order's review dialog lists the rows that reference it: its dishes, labelled by name.
                 await evaluate("document.querySelector('tbody .row-actions [aria-label=\"Ver datos actuales\"]').click()");
-                await until(() => evaluate(`const dialog=document.querySelector('dialog.review-dialog[open]');
-                    return !!dialog?.querySelector('.catering-table tbody tr') && dialog.scrollWidth <= dialog.clientWidth && dialog.scrollHeight <= dialog.clientHeight`));
+                await until(() => evaluate("return !!document.querySelector('dialog.review-dialog[open] section tbody tr')"));
+                assert.deepEqual(await evaluate("const section=document.querySelector('dialog.review-dialog section'); return [section.querySelector('h3').textContent, ...[...section.querySelectorAll('tbody td')].map(cell => cell.textContent)]"),
+                    ['Platos por pedido', 'EMP — Empanadas', '120', '900']);
                 await evaluate("[...document.querySelectorAll('dialog.review-dialog button')].find(b => b.textContent === 'Cerrar').click()");
                 await until(() => evaluate("return !document.querySelector('dialog.review-dialog')"));
-                await evaluate("document.querySelector('[data-entity=compras]').click()");
-                await until(() => evaluate("return !document.querySelector('#workspace').disabled && document.querySelector('.catering-view h2')?.textContent === 'Compras' && !!document.querySelector('.catering-table')"));
-                // 120 empanadas need 120 × 600 / 12 = 6000 g of I001, with 1 g in stock.
-                assert.deepEqual(await evaluate("return [...document.querySelector('.catering-table tbody tr').cells].map(cell => cell.textContent)"),
-                    ['Ingrediente 1', 'g', '1', '6.000', '0', '5.999', '5.999']);
-                await evaluate("[...document.querySelectorAll('.catering-view button')].find(b => b.textContent === 'Marcar entregado').click()");
-                await until(() => evaluate("return document.querySelector('#confirm-dialog').open"));
-                await evaluate("document.querySelector('#confirm-ok').click()");
-                await until(() => evaluate("return /entregado/.test(document.querySelector('.catering-status').textContent)"));
-                assert.deepEqual((await pool.query("SELECT estado FROM ssot.pedidos")).rows, [{estado: 'Entregado'}]);
-                assert.deepEqual((await pool.query("SELECT stock_actual FROM ssot.ingredientes WHERE cod_ing = 'I001'")).rows, [{stock_actual: 0}]);
-                await evaluate("document.querySelector('[data-entity=estadisticas]').click()");
-                await until(() => evaluate("return !document.querySelector('#workspace').disabled && document.querySelectorAll('.stat-card').length === 4"));
                 assert.deepEqual(errors, []);
                 await evaluate("document.querySelector('#manage-account').click()");
                 assert.equal(await evaluate("return document.querySelector('#account').matches(':modal') && !document.querySelector('#account-management').hidden && document.querySelector('#authentication').hidden"), true);
