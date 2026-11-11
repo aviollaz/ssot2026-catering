@@ -10,7 +10,7 @@ const icons = {
     previous: 'M15 5l-7 7 7 7',
     next: 'M9 5l7 7-7 7',
     pin: 'M8 3h8M9 3v6l-3 4v2h12v-2l-3-4V3M12 15v6',
-    detail: 'M4 5h16M4 12h16M4 19h10',
+    review: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12 M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
     download: 'M12 4v11M7 10l5 5 5-5M5 20h14',
 } as const;
 

@@ -54,7 +54,7 @@ test('entity data preserves JSON value types and exposes only display metadata',
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), {
         name: 'recetas',
-        label: 'Recetas', browsing, readOnly: false, children: [], window: {kind: 'complete'}, versions: ['1'],
+        label: 'Recetas', browsing, readOnly: false, window: {kind: 'complete'}, versions: ['1'],
         pk: ['cod_plato', 'cod_ing'],
         columns: [
             {name: 'cod_plato', label: 'Plato', type: 'text', nullable: false, writable: true, constraints: text},

@@ -25,8 +25,6 @@ export type EntityResponse = {
     browsing: {clientRows: number; pageSize: number; bulkDeleteLimit: number};
     // Written only by the app's own endpoints; the sheet shows it without editing.
     readOnly: boolean;
-    // Child tables shown and edited in a row's Detalle (entityDetails in the SSOT).
-    children: EntityName[];
     pk: readonly string[];
     columns: EntityColumn[];
     inputs: EntityInputColumn[];

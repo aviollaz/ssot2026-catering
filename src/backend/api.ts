@@ -2,7 +2,7 @@ import express, {type Express} from 'express';
 import type {Pool} from 'pg';
 import {completeEntity, instanceProblems, type EntityInfo} from 'system-definition';
 import {quotePgIdentifier as quote} from '@system-definition/postgres-migrations';
-import {myContext, myEntities, entityAreas, entityDetails, entityLabels, readOnlyEntities} from './system.js';
+import {myContext, myEntities, entityAreas, entityLabels, readOnlyEntities} from './system.js';
 import {browsing} from './browsing.js';
 import {inputConstraints} from './value-types.js';
 import {readQuery, queryEntity} from './entity-query.js';
@@ -35,10 +35,6 @@ export function registerEntityApi(app: Express, pool: Pick<Pool, 'query' | 'conn
         const readOnly = readOnlyEntities.includes(definition.name);
         if (readOnly) router.use(`/${entity.name}`, (req, _res, next) => next(req.method === 'GET' || req.path === '/delete-check'
             ? undefined : new ApiFailure(405, 'Esta planilla es de solo lectura.')));
-        const children: EntityName[] = [...(entityDetails as Partial<Record<EntityName, readonly EntityName[]>>)[definition.name] ?? []];
-        for (const child of children) {
-            if (!Object.values(entities.get(child)!.fks).some(fk => fk.entity === entity.name)) throw new Error(`${child} has no foreign key to ${entity.name}`);
-        }
         const readable = allowedFields(entity, 'read');
         const writable = allowedFields(entity, 'write');
         const readNames = Object.keys(readable);
@@ -175,7 +171,7 @@ export function registerEntityApi(app: Express, pool: Pick<Pool, 'query' | 'conn
                     }
                     return projected;
                 });
-                res.json({name: entity.name, label: entityLabels[definition.name], browsing, readOnly, children, pk: entity.pk, columns, inputs, foreignKeys,
+                res.json({name: entity.name, label: entityLabels[definition.name], browsing, readOnly, pk: entity.pk, columns, inputs, foreignKeys,
                     ...result, rows} as EntityResponse);
             })
             .post(async (req, res) => {

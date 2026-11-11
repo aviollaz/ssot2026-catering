@@ -1,10 +1,11 @@
-Hecho (rama feature/inventario):
-1. Modulo de inventario (ingresos/egresos/mermas/ajustes, anulación, diferencia con el historial).
-2. Unidades de conversión, con unidad de compra por ingrediente (FK) y selector en Compras.
+Hecho (rama feature/inventario, luego reducido a lo genérico):
+1. Modulo de inventario (ingresos/egresos/mermas/ajustes, anulación). Se sacó del panel al dejar solo lo genérico;
+   las planillas de movimientos de stock quedan, de solo lectura.
+2. Unidades de conversión, con unidad de compra por ingrediente (FK).
 3. Exportar a Excel una planilla o varias.
 4. Planillas ordenadas por áreas (entityAreas en system.ts, orden en src/frontend/menu.ts).
-5. Receta por plato, plato por servicio y platos por pedido en el Detalle (tablas hijas deducidas de las FKs).
+5. Las filas que referencian a un registro (receta de un plato, platos de un servicio o de un pedido) en "Ver datos actuales".
 
 Para charlar con el profesor:
-- Stock guardado y editable a mano (puede desfasarse del historial; Inventario muestra la diferencia)
-  o stock calculado como suma de los movimientos (nunca se desfasa).
+- Qué hacer con las planillas de movimientos de stock ahora que no hay vista de Inventario que las escriba.
+- Reportes genéricos y parametrizables desde la SSOT, en lugar de la vista Estadísticas.
