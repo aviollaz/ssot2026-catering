@@ -1,8 +1,8 @@
-/* Order of the ☰ areas. Each sheet's area comes from the SSOT (entityAreas) and each catering view declares
-   its own; areas missing here go last, so a new area never hides a sheet. */
+/* Order of the ☰ areas. Each sheet's area comes from the SSOT (entityAreas); areas missing here go last,
+   so a new area never hides a sheet. */
 export const areas: readonly {titulo: string; cerrada?: boolean}[] = [
-    {titulo: 'Ventas'}, {titulo: 'Cocina'}, {titulo: 'Inventario'}, {titulo: 'Análisis'},
-    // Link tables, edited from their parent's details; kept to see them all at once.
+    {titulo: 'Ventas'}, {titulo: 'Cocina'}, {titulo: 'Inventario'},
+    // Link tables, also listed in their parent's "Ver datos actuales"; kept to see them all at once.
     {titulo: 'Avanzado', cerrada: true},
 ];
 

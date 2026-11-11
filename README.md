@@ -3,31 +3,26 @@
 TP grupal sobre el repo de la clase: un gestor para empresas de catering (plan en
 [docs/plan-catering.md](docs/plan-catering.md)).
 
-- **Panel de la empresa** (`/`, con login): planillas generadas desde la SSOT para
-  ingredientes, unidades, platos, recetas, servicios, pedidos y movimientos de stock,
-  agrupadas por área en el menú ☰ (el área de cada planilla está en `entityAreas`, en
-  `src/backend/system.ts`). El **Detalle** de cada fila muestra y edita sus tablas hijas
-  (la receta de un plato, los platos de un servicio o de un pedido), deducidas de las FKs.
-  Cada planilla se puede **exportar a Excel**, y desde el menú, varias juntas. Tres vistas
-  propias:
-  - **Inventario**: registra ingresos, egresos (los platos que realmente se hicieron, con lo
-    facturado; si son de un pedido, lo pasan a Entregado), mermas y ajustes, con su historial
-    y anulación. Muestra también cuánto stock no explica el historial, porque el stock se
-    puede editar a mano.
-  - **Compras**: qué comprar para cada pedido o período, en la unidad que se elija.
-  - **Estadísticas**.
+- **Panel de la empresa** (`/`, con login): el gestor genérico de la clase, con las
+  planillas que genera la SSOT para ingredientes, unidades, platos, recetas, servicios,
+  pedidos, clientes y movimientos de stock. No tiene vistas propias: solo features
+  genéricas. Las planillas se agrupan por área en el menú ☰ (`entityAreas`, en
+  `src/backend/system.ts`), cada una se puede **exportar a Excel** (y desde el menú,
+  varias juntas), y **Ver datos actuales** muestra las filas que referencian al registro,
+  como los platos de un pedido o las recetas de un plato.
 - **Página para clientes** (`/pedidos`): elegir un menú armado o platos a la carta,
   fecha, personas y datos de contacto; para confirmar, iniciar sesión o registrarse.
   Cada cuenta de cliente es independiente de `usuarios` (administradores) y solo
   puede usar el flujo de pedidos. Devuelve un código para consultar el estado.
 
-La lógica de negocio está en `src/backend/catering.ts` (API `/api/catering`, con
-sesión administrativa, y `/api/public`, pública para catálogo/consulta y autenticada
-para crear pedidos) y `src/backend/customer-auth.ts` (registro y acceso de clientes);
-la exportación está en `exportar.ts` y `xlsx.ts`;
-el frontend en `src/frontend/inventario.ts`, `compras.ts`, `estadisticas.ts`, `pedido.ts`
-y `detalle-hijos.ts`. `npm run test:catering` prueba el cálculo de compras, los
-movimientos de stock, la exportación y la API pública contra una base aislada.
+La lógica de la página de clientes está en `src/backend/catering.ts` (API `/api/public`,
+pública para catálogo y consulta) y `src/backend/customer-auth.ts` (registro y acceso de
+clientes); el frontend en `src/frontend/pedido.ts`. La exportación a Excel (`/api/catering`,
+con sesión administrativa) está en `exportar.ts` y `xlsx.ts`. `npm run test:catering` prueba
+la API pública, la carga de pedidos de ejemplo y la exportación contra una base aislada.
+
+La versión anterior, con las vistas **Inventario**, **Compras** y **Estadísticas** dentro del
+panel de la empresa, quedó en el historial de `main` (commit `65084bd`).
 
 ## Cómo ejecutarlo, paso a paso (con Docker)
 
@@ -103,19 +98,15 @@ Si se corre de nuevo, falla por datos duplicados y no cambia nada.
 
 ### 6. Usarlo
 
-- Panel de la empresa: <http://localhost:3001/>. Las planillas, **Inventario**, **Compras** y
-  **Estadísticas** están en el menú ☰.
+- Panel de la empresa: <http://localhost:3001/>. Las planillas están en el menú ☰.
 - Página para clientes: <http://localhost:3001/pedidos>.
 
 Para probar el flujo completo:
 
 1. Hacé un pedido desde `/pedidos`, iniciando sesión o registrando una cuenta cuando
    quieras confirmarlo. Aparece solo en la planilla **Pedidos**.
-2. Cambiale el estado a `Confirmado`.
-3. En **Compras**, elegí el pedido, mirá qué hay que comprar y tocá **Registrar egreso**.
-4. En **Inventario** aparecen los platos del pedido: corregí las porciones que realmente se
-   hicieron y lo facturado, y tocá **Registrar**. El pedido pasa a Entregado.
-5. En **Ingredientes**, el stock tiene que haber bajado; el movimiento queda en el historial.
+2. Cambiale el estado (por ejemplo, a `Confirmado`) desde la planilla.
+3. Tocá **Ver datos actuales** en el pedido: abajo aparecen sus platos.
 
 ### Uso diario
 

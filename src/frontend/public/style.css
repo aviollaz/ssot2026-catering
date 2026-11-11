@@ -129,8 +129,7 @@ td input[type=checkbox] { width: auto; height: auto; }
 .confirm-dialog { width: min(420px, calc(100% - 32px)); padding: 20px 24px; }
 .dependency-dialog { width: min(600px, calc(100% - 32px)); }
 .review-dialog { width: min(960px, calc(100% - 32px)); max-height: calc(100dvh - 32px); }
-.review-dialog td { overflow-wrap: anywhere; }
-.review-dialog th, .review-dialog td { height: auto; padding: 5px 8px; }
+.review-dialog th, .review-dialog td { height: auto; padding: 5px 8px; overflow-wrap: anywhere; }
 .review-dialog h3 { margin: 16px 0 8px; }
 .dependency-list { padding-left: 20px; }
 .dependency-list > li { margin: 10px 0; }

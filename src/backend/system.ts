@@ -314,12 +314,7 @@ export const entityAreas = {
     movimiento_platos: 'Avanzado', movimiento_ingredientes: 'Avanzado', usuarios: 'Avanzado', clientes: 'Avanzado',
 } satisfies Record<keyof typeof myEntities, string>;
 
-// Child tables shown and edited in a row's Detalle, such as a dish's recipe. Each one needs a foreign key to its parent.
-export const entityDetails = {
-    platos: ['recetas'], servicios: ['servicio_platos'], pedidos: ['pedido_platos'],
-} satisfies Partial<Record<keyof typeof myEntities, readonly (keyof typeof myEntities)[]>>;
-
-// Sheets that only the inventory endpoints write, so the stock history cannot be edited or deleted.
+// The stock history: shown, but never edited or deleted through the generic sheet.
 export const readOnlyEntities: readonly (keyof typeof myEntities)[] = ['movimientos', 'movimiento_platos', 'movimiento_ingredientes'];
 
 const snapshot = captureSystemSnapshot(myContext, {

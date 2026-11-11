@@ -24,7 +24,7 @@ async function request(path: string, method = 'GET', body?: unknown, signal?: Ab
         ...(body === undefined ? {} : {body: JSON.stringify(body)}),
     });
     if (!response.ok) {
-        if (response.status === 401 && (path.startsWith('/api/entities') || path.startsWith('/api/catering') || path === '/api/events' || path === '/api/auth/me')) {
+        if (response.status === 401 && (path.startsWith('/api/entities') || path === '/api/events' || path === '/api/auth/me')) {
             clearSession();
             window.dispatchEvent(new Event('sessionexpired'));
         }
@@ -34,7 +34,7 @@ async function request(path: string, method = 'GET', body?: unknown, signal?: Ab
     return response;
 }
 
-// Authenticated catering endpoints (purchases, inventory, statistics).
+// Authenticated catering endpoints: the Excel export of the sheets.
 export async function cateringRequest<T>(path: string, method = 'GET', body: unknown = {}): Promise<T> {
     return (await request(`/api/catering${path}`, method, method === 'GET' ? undefined : body)).json() as Promise<T>;
 }

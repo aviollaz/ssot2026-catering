@@ -6,19 +6,14 @@ import {editColumnFilters} from './column-filters.js';
 import {element} from './dom.js';
 import {actionButton, setActionLabel} from './action-button.js';
 import {createTableNavigation} from './table-navigation.js';
-import {abrirDetalle} from './detalle-hijos.js';
+import {reviewRow} from './review-row.js';
+import {relatedRows} from './related-rows.js';
 import {initializeAuthentication} from './auth-ui.js';
 import {loadReferenceSources, type LoadedReferenceSource} from './reference-sources.js';
 import {confirmAction, showDeleteDependencies} from './confirm.js';
 import {scrollCue, updateScrollCues} from './sheet-scroll.js';
 import {createRowEditor, type RowEditor, type Row, type Value} from './row-editor.js';
-import {comprasView} from './compras.js';
-import {estadisticasView} from './estadisticas.js';
-import {inventarioView} from './inventario.js';
 import {exportarPlanilla, exportarVarias} from './exportar.js';
-
-// Catering views listed after the spreadsheets in the drawer.
-const cateringViews = [inventarioView, comprasView, estadisticasView];
 
 let labels: Readonly<Record<string, string>> = {};
 let catalogEntries: EntityNamesResponse = [];
@@ -95,13 +90,6 @@ async function show(name: EntityName): Promise<void> {
     const generation = ++viewGeneration;
     invalidateView = () => {};
     resumeLive = () => {};
-    const view = cateringViews.find(candidate => candidate.name === name);
-    if (view) {
-        canLeaveView = async () => true;
-        const invalidate = await view.show(content, other => void run(() => selectTab(other)));
-        if (generation === viewGeneration) invalidateView = invalidate;
-        return;
-    }
     let entity: EntityResponse;
     let sources: LoadedReferenceSource[];
     for (;;) {
@@ -470,7 +458,12 @@ async function show(name: EntityName): Promise<void> {
 
             const actions = tr.insertCell();
             actions.className = 'row-actions';
-            if (entity.children.length) actions.append(actionButton('Detalle', 'detail', () => void run(() => abrirDetalle(entity, row))));
+            actions.append(actionButton('Ver datos actuales', 'review', () => void run(async () => {
+                cache.invalidate(name);
+                const query = {where: rowKey(entity, row)} as EntityQuery;
+                const current = entityPage(await load(name, query), query).rows[0];
+                reviewRow(entity, row, editors.get(row)!.read(), current, ...await relatedRows(entity, row, Object.keys(labels), load));
+            })));
         });
         if (entity.readOnly) for (const field of tbody.querySelectorAll<HTMLInputElement | HTMLSelectElement>('.field input, .field select')) field.disabled = true;
         for (const row of table.rows) {
@@ -535,7 +528,7 @@ initializeAuthentication(active => {
         allEntities = catalog.map(entity => entity.name);
         labels = Object.fromEntries(catalog.map(entity => [entity.name, entity.label]));
         catalogEntries = catalog;
-        navigation.catalog([...catalog, ...cateringViews.map(({name, label, area}) => ({name, label, area}))]);
+        navigation.catalog(catalog);
         if (allEntities[0]) await selectTab(allEntities[0]);
         else content.textContent = 'No hay planillas disponibles.';
         stopWatching = watchEntities(name => { cache.invalidate(name); invalidateView(name); });

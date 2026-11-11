@@ -8,7 +8,7 @@ export function observeSheetLayout(panel: HTMLDialogElement, toggle: HTMLButtonE
     let observedTable: HTMLTableElement | null = null;
     function fit() {
         frame = 0;
-        const table = content.querySelector<HTMLTableElement>('.table-scroll > table');
+        const table = content.querySelector('table');
         if (table !== observedTable) {
             resize.disconnect();
             resize.observe(workspace);
@@ -25,10 +25,7 @@ export function observeSheetLayout(panel: HTMLDialogElement, toggle: HTMLButtonE
         table.style.width = 'max-content';
         content.classList.remove('roomy-actions');
         const gap = parseFloat(getComputedStyle(workspace).columnGap) || 0;
-        // Dock when the table fits beside the panel, or when the panel leaves the table most of the width:
-        // a wide table scrolls horizontally anyway, so hiding the panel would only make the menu inconsistent.
-        const docked = panelWidth + table.getBoundingClientRect().width + gap <= workspace.clientWidth
-            || panelWidth + gap <= workspace.clientWidth / 3;
+        const docked = panelWidth + table.getBoundingClientRect().width + gap <= workspace.clientWidth;
         workspace.classList.toggle('docked', docked);
         toggle.hidden = docked;
         if (docked && !panel.open) panel.show();
