@@ -55,6 +55,16 @@
       "systemId": "ssot2026",
       "releaseId": "0010_customer_accounts",
       "releaseHash": "f85ebd309650e5db22dc310f497653f940341e6f7238df3501f36814f141558d"
+    },
+    {
+      "systemId": "ssot2026",
+      "releaseId": "0011_customer_profiles",
+      "releaseHash": "e6de369eb0fecf91c1fd418563c2855422f02105c6349874d572b33b16ec7ed3"
+    },
+    {
+      "systemId": "ssot2026",
+      "releaseId": "0012_customer_profiles",
+      "releaseHash": "2b9745520823542cfed505c80ac9a7230d17b670019e429b51cef168641bd1e2"
     }
   ],
   "migrations": [
@@ -1691,6 +1701,64 @@
         "after": []
       },
       "migrationHash": "d437de243773af0f268967348d8712b6c8403035cf62c1dbe8b3c7dc6d567ae4"
+    },
+    {
+      "migration": {
+        "id": "0011_customer_profiles",
+        "from": {
+          "systemId": "ssot2026",
+          "releaseId": "0010_customer_accounts",
+          "releaseHash": "f85ebd309650e5db22dc310f497653f940341e6f7238df3501f36814f141558d"
+        },
+        "to": {
+          "systemId": "ssot2026",
+          "releaseId": "0011_customer_profiles",
+          "releaseHash": "e6de369eb0fecf91c1fd418563c2855422f02105c6349874d572b33b16ec7ed3"
+        },
+        "description": "",
+        "before": [],
+        "steps": [
+          {
+            "id": "001_add_column_clientes_nombre",
+            "run": {
+              "name": "001_add_column_clientes_nombre.sql",
+              "kind": "sql",
+              "contentHash": "d0a687da7bf89348d899d7686e54f7ffbcf196271e93981d41b362facc0ee933"
+            }
+          }
+        ],
+        "after": []
+      },
+      "migrationHash": "3f1225e98fd1ef5a4215047c4de9e9f76510cd4bb30fa84a079bd53b4ca6ecbf"
+    },
+    {
+      "migration": {
+        "id": "0012_customer_profiles",
+        "from": {
+          "systemId": "ssot2026",
+          "releaseId": "0011_customer_profiles",
+          "releaseHash": "e6de369eb0fecf91c1fd418563c2855422f02105c6349874d572b33b16ec7ed3"
+        },
+        "to": {
+          "systemId": "ssot2026",
+          "releaseId": "0012_customer_profiles",
+          "releaseHash": "2b9745520823542cfed505c80ac9a7230d17b670019e429b51cef168641bd1e2"
+        },
+        "description": "",
+        "before": [],
+        "steps": [
+          {
+            "id": "001_add_column_clientes_apellido",
+            "run": {
+              "name": "001_add_column_clientes_apellido.sql",
+              "kind": "sql",
+              "contentHash": "e643660a2c37924bfe0118ad480c4bb9e136525b77829712aa8931d305dccf65"
+            }
+          }
+        ],
+        "after": []
+      },
+      "migrationHash": "aaa8805478201bfa233037388fb373b9c92f879299cf64c03f5359454d24aa9b"
     }
   ]
 }

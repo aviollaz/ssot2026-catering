@@ -162,6 +162,8 @@ const usuario = defineRecord(myTypes, {
 const cliente = defineRecord(myTypes, {
     id: {type: 'text', nullable: false, writable: false as const, visible: false as const, onCreate: 'uuid' as const},
     email: {type: 'text', label: 'Email', nullable: false, maxLength: 254},
+    nombre: {type: 'text', label: 'Nombre', nullable: true, maxLength: 100},
+    apellido: {type: 'text', label: 'Apellido', nullable: true, maxLength: 100},
     contrasena_hash: {type: 'text', nullable: false, label: 'Contraseña', readable: false as const,
         inputName: 'contrasena' as const, inputType: 'password' as const, transform: 'password' as const},
     version_sesion: {type: 'text', nullable: false, readable: false as const, writable: false as const,

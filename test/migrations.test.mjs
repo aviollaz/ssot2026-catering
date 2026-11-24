@@ -47,6 +47,8 @@ test('migration artifacts retain valid hashes and grant CRUD only when their tab
         '0008_receta_cantidad_decimal': [],
         '0009_update_schema': ['movimiento_ingredientes', 'movimiento_platos', 'movimientos', 'unidades'],
         '0010_customer_accounts': ['clientes'],
+        '0011_customer_profiles': [],
+        '0012_customer_profiles': [],
     };
     for (let index = 0; index < catalog.releases.length; index++) value(await readCatalogState(root, catalog, index));
     for (const published of catalog.migrations) {
@@ -61,6 +63,12 @@ test('migration artifacts retain valid hashes and grant CRUD only when their tab
         if (published.migration.id === '0010_customer_accounts') {
             assert.match(text, /ADD COLUMN "cliente_id" "pg_catalog"\."text";/);
             assert.match(text, /FOREIGN KEY \("cliente_id"\) REFERENCES "ssot"\."clientes" \("id"\)/);
+        }
+        if (published.migration.id === '0011_customer_profiles') {
+            assert.match(text, /ADD COLUMN "nombre" "pg_catalog"\."text";/);
+        }
+        if (published.migration.id === '0012_customer_profiles') {
+            assert.match(text, /ADD COLUMN "apellido" "pg_catalog"\."text";/);
         }
     }
 });

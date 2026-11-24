@@ -24,7 +24,7 @@ app.get('/health', async (_, res) => {
     res.json({ok: true});
 });
 app.get('/menu', (_, res) => { res.redirect('/'); });
-app.get(['/pedido', '/pedidos'], (_, res) => { res.sendFile(fileURLToPath(new URL('../../src/frontend/public/pedido.html', import.meta.url))); });
+app.get(['/pedido', '/pedidos', '/inicio'], (_, res) => { res.sendFile(fileURLToPath(new URL('../../src/frontend/public/pedido.html', import.meta.url))); });
 app.use('/assets', express.static(fileURLToPath(new URL('../frontend', import.meta.url))));
 app.use(express.static(fileURLToPath(new URL('../../src/frontend/public', import.meta.url))));
 

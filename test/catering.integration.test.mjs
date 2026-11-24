@@ -77,7 +77,7 @@ test('the example orders load through the public order logic', async () => {
 
 test('the public API validates orders against the SSOT and business rules and never exposes personal data', {timeout: 60000}, async t => {
     await withTestDatabase(async ({pool}) => {
-        await fixture(pool);
+        const fixtureIds = await fixture(pool);
         await initializeUsers(pool, {username: 'catering-admin', password: 'catering-test-password'});
         const app = express(), auth = createAuthentication(pool, 'catering-test-secret-with-at-least-32-bytes');
         const customerAuth = createCustomerAuthentication(pool, 'catering-test-secret-with-at-least-32-bytes');
@@ -90,9 +90,18 @@ test('the public API validates orders against the SSOT and business rules and ne
         const base = `http://127.0.0.1:${server.address().port}`;
         const user = (await pool.query('SELECT id, usuario, version_sesion FROM ssot.usuarios')).rows[0];
         const {token} = await auth.issueToken(user);
-        const request = (path, body, jwt) => fetch(base + path, body === undefined ? {headers: jwt ? {Authorization: `Bearer ${jwt}`} : {}} : {
-            method: 'POST', headers: {'Content-Type': 'application/json', ...(jwt ? {Authorization: `Bearer ${jwt}`} : {})}, body: JSON.stringify(body)});
+        const request = (path, body, jwt, method) => fetch(base + path, {
+            method: method ?? (body === undefined ? 'GET' : 'POST'),
+            headers: {'Content-Type': 'application/json', ...(jwt ? {Authorization: `Bearer ${jwt}`} : {})},
+            ...(body === undefined ? {} : {body: JSON.stringify(body)}),
+        });
         const enDias = dias => localDateTime(new Date(Date.now() + dias * 24 * 60 * 60 * 1000));
+        const enDiaCalendario = (dias, hora = '00:00') => {
+            const fecha = new Date();
+            fecha.setHours(0, 0, 0, 0);
+            fecha.setDate(fecha.getDate() + dias);
+            return `${localDateTime(fecha).slice(0, 10)}T${hora}`;
+        };
         const contar = async () => (await pool.query('SELECT count(*)::int AS n FROM ssot.pedidos')).rows[0].n;
 
         const anonimo = await request('/api/public/pedidos', {...cliente, fecha_evento: enDias(5), personas: 10, cod_servicio: 'S'});
@@ -100,10 +109,14 @@ test('the public API validates orders against the SSOT and business rules and ne
         const pedidoAnonimo = (await anonimo.json()).id;
         assert.deepEqual((await pool.query('SELECT cliente_id FROM ssot.pedidos WHERE id = $1', [pedidoAnonimo])).rows,
             [{cliente_id: null}]);
-        const registered = await request('/api/public/auth/register', {email: 'ANA@example.com', contrasena: 'customer-test-password'});
+        const registered = await request('/api/public/auth/register', {
+            email: 'ANA@example.com', nombre: 'Ana', apellido: 'Pérez', contrasena: 'customer-test-password',
+        });
         assert.equal(registered.status, 201);
         const {token: customerToken, customer} = await registered.json();
         assert.equal(customer.email, 'ana@example.com');
+        assert.equal(customer.nombre, 'Ana');
+        assert.equal(customer.apellido, 'Pérez');
         const vinculo = await request(`/api/public/mis-pedidos/${pedidoAnonimo}`, {}, customerToken);
         assert.deepEqual(await vinculo.json(), {associated: true});
         const historial = await request('/api/public/mis-pedidos', undefined, customerToken);
@@ -111,7 +124,26 @@ test('the public API validates orders against the SSOT and business rules and ne
         assert.deepEqual((await historial.json()).map(pedido => pedido.id), [pedidoAnonimo]);
         assert.deepEqual((await pool.query('SELECT cliente_id FROM ssot.pedidos WHERE id = $1', [pedidoAnonimo])).rows,
             [{cliente_id: customer.id}]);
+        const detallePedido = await request(`/api/public/mis-pedidos/${pedidoAnonimo}`, undefined, customerToken);
+        assert.deepEqual(await detallePedido.json(), {
+            cliente_nombre: 'Ana', cliente_email: 'ana@example.com', cliente_telefono: '1', direccion: 'Calle 1',
+            personas: 10, observaciones: null, cod_servicio: 'S', platos: [{cod_plato: 'PAN', porciones: 20}],
+        });
+        await pool.query('UPDATE ssot.pedidos SET cliente_id = $1 WHERE id = ANY($2::text[])',
+            [customer.id, [fixtureIds.A, fixtureIds.P]]);
+        assert.equal((await request(`/api/public/mis-pedidos/${fixtureIds.P}`, undefined, undefined, 'DELETE')).status, 401);
+        assert.equal((await request(`/api/public/mis-pedidos/${fixtureIds.C}`, undefined, customerToken)).status, 404);
+        assert.equal((await request(`/api/public/mis-pedidos/${fixtureIds.A}`, undefined, customerToken)).status, 409);
+        assert.equal((await request(`/api/public/mis-pedidos/${fixtureIds.P}`, undefined, customerToken, 'DELETE')).status, 200);
+        assert.equal((await pool.query('SELECT estado FROM ssot.pedidos WHERE id = $1', [fixtureIds.P])).rows[0].estado, 'Cancelado');
+        assert.equal((await request(`/api/public/mis-pedidos/${fixtureIds.A}`, undefined, customerToken, 'DELETE')).status, 409);
+        assert.equal((await request(`/api/public/mis-pedidos/${fixtureIds.C}`, undefined, customerToken, 'DELETE')).status, 404);
         published.length = 0;
+        await pool.query('UPDATE ssot.clientes SET nombre = NULL, apellido = NULL WHERE id = $1', [customer.id]);
+        const perfilAnterior = await request('/api/public/auth/me', undefined, customerToken);
+        assert.equal((await perfilAnterior.json()).nombre, null);
+        const perfilCompletado = await request('/api/public/auth/profile', {nombre: 'Ana', apellido: 'Pérez'}, customerToken);
+        assert.deepEqual(await perfilCompletado.json(), {...customer, nombre: 'Ana', apellido: 'Pérez'});
         assert.equal((await request('/api/entities', undefined, customerToken)).status, 401);
         assert.equal((await request('/api/catering/pedidos', undefined, customerToken)).status, 401);
         assert.equal((await request('/api/public/pedidos', {...cliente, fecha_evento: enDias(5), personas: 10, cod_servicio: 'S'}, token)).status, 401);
@@ -124,20 +156,26 @@ test('the public API validates orders against the SSOT and business rules and ne
             anticipacionDias: 3,
         });
 
-        const valido = {...cliente, fecha_evento: enDias(5), personas: 10, cod_servicio: 'S'};
+        const valido = {...cliente, cliente_nombre: 'Ana Pérez', fecha_evento: enDias(5), personas: 10, cod_servicio: 'S'};
+        const fechaLimite = {...valido, fecha_evento: enDiaCalendario(3)};
+        const pedidoEnLimite = await request('/api/public/pedidos', fechaLimite, customerToken);
+        assert.equal(pedidoEnLimite.status, 201, 'the earliest allowed calendar day must be accepted at midnight');
+        published.length = 0;
         const antes = await contar();
         for (const [body, message] of [
-            [{...valido, fecha_evento: enDias(1)}, /anticipación/],
+            [{...valido, fecha_evento: enDiaCalendario(2, '23:59')}, /anticipación/],
             [{...valido, personas: 5}, /mínimo de 10/],
             [{...valido, cod_servicio: 'X'}, /no existe o no está disponible/],
-            [{...cliente, fecha_evento: enDias(5), personas: 2, platos: [{cod_plato: 'OFF', porciones: 1}]}, /OFF no existe o no está disponible/],
-            [{...cliente, fecha_evento: enDias(5), personas: 2, platos: [{cod_plato: 'PAN', porciones: 1}, {cod_plato: 'PAN', porciones: 2}]}, /una sola vez/],
-            [{...cliente, fecha_evento: enDias(5), personas: 2, platos: [{cod_plato: 'PAN', porciones: 0}]}, /porciones/i],
-            [{...cliente, fecha_evento: enDias(5), personas: 2, platos: []}, /Elegí entre 1/],
+            [{...cliente, cliente_nombre: 'Ana Pérez', fecha_evento: enDias(5), personas: 2, platos: [{cod_plato: 'OFF', porciones: 1}]}, /OFF no existe o no está disponible/],
+            [{...cliente, cliente_nombre: 'Ana Pérez', fecha_evento: enDias(5), personas: 2, platos: [{cod_plato: 'PAN', porciones: 1}, {cod_plato: 'PAN', porciones: 2}]}, /una sola vez/],
+            [{...cliente, cliente_nombre: 'Ana Pérez', fecha_evento: enDias(5), personas: 2, platos: [{cod_plato: 'PAN', porciones: 0}]}, /porciones/i],
+            [{...cliente, cliente_nombre: 'Ana Pérez', fecha_evento: enDias(5), personas: 2, platos: []}, /Elegí entre 1/],
             [{...valido, platos: [{cod_plato: 'PAN', porciones: 1}]}, /servicio o armá/],
             [{...valido, total: 1}, /campos indicados/],
             [{...valido, estado: 'Confirmado'}, /campos indicados/],
-            [{...valido, cliente_email: 'sin-arroba'}, /email/],
+            [{...valido, cliente_nombre: 'Otra persona'}, /perfil/],
+            [{...valido, cliente_email: 'otra@example.com'}, /perfil/],
+            [{...valido, cliente_email: 'sin-arroba'}, /perfil/],
             [{...valido, fecha_evento: 'mañana'}, /fecha_evento/],
         ]) {
             const response = await request('/api/public/pedidos', body, customerToken);
@@ -157,12 +195,20 @@ test('the public API validates orders against the SSOT and business rules and ne
             [{estado: 'Pendiente', cod_servicio: 'S', total: 5000, cliente_id: customer.id}]);
         assert.deepEqual((await pool.query('SELECT cod_plato, porciones, precio_porcion FROM ssot.pedido_platos WHERE pedido = $1', [id])).rows,
             [{cod_plato: 'PAN', porciones: 20, precio_porcion: 100}]);
+        const repeticion = await request(`/api/public/mis-pedidos/${id}`, undefined, customerToken);
+        assert.deepEqual((await repeticion.json()).platos, [{cod_plato: 'PAN', porciones: 20}]);
         const carta = await request('/api/public/pedidos', {...cliente, fecha_evento: enDias(5), personas: 3, platos: [{cod_plato: 'PAN', porciones: 7}]}, customerToken);
         assert.equal((await carta.json()).total, 700);
+        published.length = 0;
+        const cancelado = await request(`/api/public/mis-pedidos/${id}`, undefined, customerToken, 'DELETE');
+        assert.deepEqual(await cancelado.json(), {cancelled: true});
+        assert.deepEqual((await pool.query('SELECT estado FROM ssot.pedidos WHERE id = $1', [id])).rows, [{estado: 'Cancelado'}]);
+        assert.deepEqual(published, ['pedidos']);
+        assert.equal((await request(`/api/public/mis-pedidos/${id}`, undefined, customerToken, 'DELETE')).status, 409);
 
         // The uuid is the secret code; the status response holds no personal data.
         assert.deepEqual(await (await request(`/api/public/pedidos/${id}`)).json(),
-            {estado: 'Pendiente', fecha_evento: `${valido.fecha_evento}:00`, personas: 10, total: 5000});
+            {estado: 'Cancelado', fecha_evento: `${valido.fecha_evento}:00`, personas: 10, total: 5000});
         for (const code of ['00000000-0000-4000-8000-000000000000', 'not-a-uuid', "' OR '1'='1"]) {
             assert.equal((await request(`/api/public/pedidos/${encodeURIComponent(code)}`)).status, 404);
         }

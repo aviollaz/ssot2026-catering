@@ -39,7 +39,11 @@
                 <input id="login-username" name="usuario" autocomplete="username" hidden>
                 <div class="field">
                     <label for="login-password">Contraseña</label>
-                    <input id="login-password" name="contrasena" type="password" autocomplete="current-password" required>
+                    <span class="secret-field">
+                        <input id="login-password" name="contrasena" type="password" autocomplete="current-password" minlength="12" maxlength="128" required>
+                        <button type="button" class="toggle-password" aria-label="Mostrar contraseña" aria-pressed="false">Mostrar</button>
+                    </span>
+                    <p class="muted">La contraseña debe tener entre 12 y 128 caracteres.</p>
                 </div>
                 <div class="actions">
                     <button type="submit" class="primary">Ingresar</button>
@@ -58,7 +62,11 @@
                 </div>
                 <div class="field">
                     <label for="recover-password">Nueva contraseña</label>
-                    <input id="recover-password" name="contrasena" type="password" autocomplete="new-password" required minlength="12" maxlength="128">
+                    <span class="secret-field">
+                        <input id="recover-password" name="contrasena" type="password" autocomplete="new-password" required minlength="12" maxlength="128">
+                        <button type="button" class="toggle-password" aria-label="Mostrar contraseña" aria-pressed="false">Mostrar</button>
+                    </span>
+                    <p class="muted">La contraseña debe tener entre 12 y 128 caracteres.</p>
                 </div>
                 <div class="actions">
                     <button type="submit" class="primary">Restablecer contraseña</button>
@@ -92,11 +100,19 @@
             <form id="account-form">
                 <div class="field">
                     <label for="account-current">Contraseña actual</label>
-                    <input id="account-current" name="actual" type="password" autocomplete="current-password" required minlength="12" maxlength="128">
+                    <span class="secret-field">
+                        <input id="account-current" name="actual" type="password" autocomplete="current-password" required minlength="12" maxlength="128">
+                        <button type="button" class="toggle-password" aria-label="Mostrar contraseña" aria-pressed="false">Mostrar</button>
+                    </span>
+                    <p class="muted">La contraseña debe tener entre 12 y 128 caracteres.</p>
                 </div>
                 <div class="field">
                     <label for="account-new">Nueva contraseña (opcional)</label>
-                    <input id="account-new" name="nueva" type="password" autocomplete="new-password" minlength="12" maxlength="128">
+                    <span class="secret-field">
+                        <input id="account-new" name="nueva" type="password" autocomplete="new-password" minlength="12" maxlength="128">
+                        <button type="button" class="toggle-password" aria-label="Mostrar contraseña" aria-pressed="false">Mostrar</button>
+                    </span>
+                    <p class="muted">Si la cambiás, debe tener entre 12 y 128 caracteres.</p>
                 </div>
                 <p class="muted">Si indicás una nueva contraseña, se cerrarán tus sesiones y recibirás códigos nuevos.</p>
                 <div class="actions">

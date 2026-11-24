@@ -244,11 +244,19 @@ test('customer registration and login use a separate account table and cannot au
             customer = Object.fromEntries(names.map((name, index) => [name, values[index]]));
             return {rows: [], rowCount: 1};
         }
-        if (sql.startsWith('SELECT "id", "email", "version_sesion", "contrasena_hash" FROM "ssot"."clientes"')) {
+        if (sql.startsWith('SELECT "id", "email", "nombre", "apellido", "version_sesion", "contrasena_hash" FROM "ssot"."clientes"')) {
             return {rows: customer?.email === values[0] ? [customer] : []};
         }
-        if (sql.startsWith('SELECT "id", "email", "version_sesion" FROM "ssot"."clientes"')) {
+        if (sql.startsWith('SELECT "id", "email", "nombre", "apellido", "version_sesion" FROM "ssot"."clientes"')) {
             return {rows: customer?.id === values[0] ? [customer] : []};
+        }
+        if (sql.startsWith('UPDATE "ssot"."clientes" SET "nombre"')) {
+            if (customer?.id === values[2] && (customer.nombre === null || customer.apellido === null)) {
+                customer.nombre = values[0];
+                customer.apellido = values[1];
+            }
+            const updated = customer?.id === values[2] && customer.nombre === values[0] && customer.apellido === values[1];
+            return {rows: updated ? [{id: customer.id}] : [], rowCount: updated ? 1 : 0};
         }
         if (sql.startsWith('UPDATE "ssot"."clientes" SET "version_sesion"')) {
             if (customer?.id === values[1]) customer.version_sesion = values[0];
@@ -273,11 +281,11 @@ test('customer registration and login use a separate account table and cannot au
     });
 
     const registered = await request('/api/public/auth/register', 'POST',
-        {email: ' Customer@Example.com ', contrasena: password});
+        {email: ' Customer@Example.com ', nombre: 'Customer', apellido: 'Example', contrasena: password});
     assert.equal(registered.status, 201);
     assert.equal(registered.headers.get('cache-control'), 'no-store');
     const account = await registered.json();
-    assert.deepEqual(account.customer, {id: customer.id, email: 'customer@example.com'});
+    assert.deepEqual(account.customer, {id: customer.id, email: 'customer@example.com', nombre: 'Customer', apellido: 'Example'});
     assert.equal(account.expiresIn, 86400);
     assert.equal((await request('/api/entities', 'GET', undefined, account.token)).status, 401);
     assert.equal((await request('/api/auth/me', 'GET', undefined, account.token)).status, 401);
@@ -285,12 +293,17 @@ test('customer registration and login use a separate account table and cannot au
     assert.ok(!JSON.stringify(account).includes(customer.contrasena_hash));
 
     const duplicate = await request('/api/public/auth/register', 'POST',
-        {email: 'customer@example.com', contrasena: password});
+        {email: 'customer@example.com', nombre: 'Customer', apellido: 'Example', contrasena: password});
     assert.equal(duplicate.status, 409);
+    const missingName = await request('/api/public/auth/register', 'POST',
+        {email: 'other@example.com', nombre: 'Customer', contrasena: password});
+    assert.equal(missingName.status, 400);
     const login = await request('/api/public/auth/login', 'POST',
         {email: 'CUSTOMER@example.com', contrasena: password});
     assert.equal(login.status, 200);
-    assert.equal((await login.json()).customer.email, 'customer@example.com');
+    assert.deepEqual((await login.json()).customer, {
+        id: customer.id, email: 'customer@example.com', nombre: 'Customer', apellido: 'Example',
+    });
     const invalid = await request('/api/public/auth/login', 'POST',
         {email: 'missing@example.com', contrasena: password});
     assert.equal(invalid.status, 401);

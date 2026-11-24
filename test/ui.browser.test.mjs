@@ -31,6 +31,7 @@ test('table navigation and spreadsheet work with the real API', {timeout: 90000}
         registerCustomerAuthApi(app, pool, customerAuth);
         registerEntityApi(app, pool, auth, publish);
         registerCateringApi(app, pool, auth, customerAuth, publish);
+        app.get('/inicio', (_req, res) => res.sendFile('src/frontend/public/pedido.html', {root: process.cwd()}));
         app.use('/assets', express.static('dist/frontend'));
         app.use(express.static('src/frontend/public'));
         const server = await new Promise(resolve => { const server = app.listen(0, '127.0.0.1', () => resolve(server)); });
@@ -57,6 +58,9 @@ test('table navigation and spreadsheet work with the real API', {timeout: 90000}
                 await send('Page.navigate', {url: `http://127.0.0.1:${server.address().port}`});
                 await until(() => evaluate("return typeof document.querySelector('#login-form')?.onsubmit === 'function'"));
                 assert.equal(await evaluate("return !document.querySelector('#authentication').hidden && !document.querySelector('#identity-form').hidden && document.querySelector('#login-form').hidden && !document.querySelector('dialog[open]')"), true);
+                await evaluate("document.querySelector('#login-form .toggle-password').click()");
+                assert.equal(await evaluate("return document.querySelector('#login-password').type === 'text' && document.querySelector('#login-form .toggle-password').getAttribute('aria-label') === 'Ocultar contraseña'"), true);
+                await evaluate("document.querySelector('#login-form .toggle-password').click()");
                 await evaluate("document.querySelector('#login-user').value='missing-user'; document.querySelector('#identity-form').requestSubmit();");
                 assert.equal(loginRequests.length, 0);
                 assert.equal(await evaluate("return document.activeElement.id === 'login-password' && document.querySelector('#identity-form').hidden && !document.querySelector('#login-form').hidden"), true);
@@ -228,7 +232,13 @@ test('table navigation and spreadsheet work with the real API', {timeout: 90000}
                     document.querySelector('#personas').value = '12'; document.querySelector('#fecha').value = '2030-01-15T20:00';
                     document.querySelector('#paso-evento').requestSubmit();
                     const contact = document.querySelector('#paso-contacto');
-                    for (const [name, value] of Object.entries({cliente_nombre: 'Laura', cliente_email: 'laura@example.com', cliente_telefono: '1', direccion: 'Calle 2'})) contact.elements[name].value = value;
+                    if (!contact.elements.cliente_nombre_pila.required || !contact.elements.cliente_apellido.required) {
+                        throw new Error('Nombre y apellido deben ser obligatorios.');
+                    }
+                    for (const [name, value] of Object.entries({
+                        cliente_nombre_pila: 'Laura', cliente_apellido: 'García', cliente_email: 'laura@example.com',
+                        cliente_telefono: '1', direccion: 'Calle 2'
+                    })) contact.elements[name].value = value;
                     contact.requestSubmit();`);
                 assert.equal(await evaluate("return !document.querySelector('#paso-resumen').hidden"), true);
                 assert.match(await evaluate("return document.querySelector('#resumen .total').textContent"), /12\.000/);
@@ -241,15 +251,73 @@ test('table navigation and spreadsheet work with the real API', {timeout: 90000}
                 await until(() => evaluate("return !document.querySelector('#cuenta-dialog').open"));
                 await evaluate("document.querySelector('#abrir-cuenta').click()");
                 await until(() => evaluate("return document.querySelector('#cuenta-dialog').open"));
+                await evaluate("document.querySelector('[data-cuenta=registro]').click()");
                 await evaluate(`const account = document.querySelector('#cuenta-registro');
                     account.elements.email.value = 'laura@example.com';
                     account.elements.contrasena.value = 'customer-test-password';
+                    if (account.elements.nombre || account.elements.apellido) throw new Error('El registro no debe volver a pedir nombre y apellido.');
                     account.requestSubmit();`);
-                await until(() => evaluate("return !document.querySelector('#cuenta-pedidos').hidden"));
+                await until(() => evaluate("return location.pathname === '/inicio' && !document.querySelector('#inicio-con-sesion').hidden"));
+                assert.equal(await evaluate("return document.querySelector('#inicio-perfil-pendiente').hidden"), true);
+                assert.equal(await evaluate("return !document.querySelector('#cliente-nav').hidden"), true);
+                assert.deepEqual((await pool.query("SELECT nombre, apellido FROM ssot.clientes WHERE email = 'laura@example.com'")).rows,
+                    [{nombre: 'Laura', apellido: 'García'}]);
                 assert.deepEqual((await pool.query('SELECT estado, total, personas, cliente_id FROM ssot.pedidos WHERE id = $1', [code])).rows,
                     [{estado: 'Pendiente', total: 12000, personas: 12,
                         cliente_id: (await pool.query("SELECT id FROM ssot.clientes WHERE email = 'laura@example.com'")).rows[0].id}]);
                 assert.deepEqual((await pool.query('SELECT cod_plato, porciones FROM ssot.pedido_platos WHERE pedido = $1', [code])).rows, [{cod_plato: 'EMP', porciones: 36}]);
+                await send('Page.reload');
+                await until(() => evaluate("return !document.querySelector('#inicio-con-sesion').hidden && document.querySelector('#inicio-identidad').textContent.includes('laura@example.com')"));
+                assert.equal(await evaluate("return !!JSON.parse(localStorage.getItem('ssot2026.customer-session'))?.token"), true);
+                await evaluate("document.querySelector('#inicio-pedidos button').click()");
+                await until(() => evaluate("return !document.querySelector('#paso-menu').hidden"));
+                assert.deepEqual(await evaluate(`return {
+                    servicio: document.querySelector('.card.service[aria-pressed=true] h3').textContent,
+                    personas: document.querySelector('#personas').value,
+                    email: document.querySelector('#paso-contacto').elements.cliente_email.value,
+                    nombreReadOnly: document.querySelector('#paso-contacto').elements.cliente_nombre_pila.readOnly,
+                    apellidoReadOnly: document.querySelector('#paso-contacto').elements.cliente_apellido.readOnly,
+                    nombre: document.querySelector('#paso-contacto').elements.cliente_nombre_pila.value,
+                    apellido: document.querySelector('#paso-contacto').elements.cliente_apellido.value,
+                    emailReadOnly: document.querySelector('#paso-contacto').elements.cliente_email.readOnly,
+                    fecha: document.querySelector('#fecha').value
+                }`), {
+                    servicio: 'Cóctel', personas: '12', email: 'laura@example.com',
+                    nombreReadOnly: true, apellidoReadOnly: true, nombre: 'Laura', apellido: 'García',
+                    emailReadOnly: true, fecha: '',
+                });
+                await evaluate("document.querySelector('#cliente-nav a').click()");
+                await until(() => evaluate("return location.pathname === '/inicio' && !document.querySelector('#cliente-nav').hidden"));
+                await evaluate("document.querySelector('#inicio-pedidos button').click()");
+                await until(() => evaluate("return !document.querySelector('#paso-menu').hidden"));
+                await evaluate(`document.querySelector('#menu-siguiente').click();
+                    const fecha = document.querySelector('#fecha');
+                    const minimo = new Date();
+                    minimo.setHours(0, 0, 0, 0);
+                    minimo.setDate(minimo.getDate() + 3);
+                    const pad = n => String(n).padStart(2, '0');
+                    const fechaEsperada = minimo.getFullYear() + '-' + pad(minimo.getMonth() + 1) + '-' + pad(minimo.getDate()) + 'T00:00';
+                    if (fecha.min !== fechaEsperada) throw new Error('El mínimo debe ser el día calendario que completa los tres días.');
+                    const anterior = new Date(minimo);
+                    anterior.setDate(anterior.getDate() - 1);
+                    fecha.value = anterior.getFullYear() + '-' + pad(anterior.getMonth() + 1) + '-' + pad(anterior.getDate()) + 'T23:59';
+                    if (fecha.reportValidity()) throw new Error('Se aceptó una fecha anterior al mínimo.');
+                    fecha.value = fechaEsperada;
+                    if (!fecha.reportValidity()) throw new Error('Se rechazó el límite de tres días.');
+                    document.querySelector('#fecha').value = '2030-01-16T20:00';
+                    document.querySelector('#paso-evento').requestSubmit();
+                    document.querySelector('#paso-contacto').requestSubmit();
+                    document.querySelector('#confirmar').click();`);
+                await until(() => evaluate("return !document.querySelector('#paso-listo').hidden && !document.querySelector('#cuenta-dialog').open"));
+                const repeatedCode = await evaluate("return document.querySelector('#codigo').textContent");
+                assert.deepEqual((await pool.query('SELECT estado, total, personas FROM ssot.pedidos WHERE id = $1', [repeatedCode])).rows,
+                    [{estado: 'Pendiente', total: 12000, personas: 12}]);
+                const revokedToken = await evaluate("return JSON.parse(localStorage.getItem('ssot2026.customer-session')).token");
+                await evaluate("document.querySelector('#cliente-logout').click()");
+                await until(() => evaluate("return !document.querySelector('#inicio-sin-sesion').hidden && document.querySelector('#cliente-nav').hidden && !localStorage.getItem('ssot2026.customer-session')"));
+                assert.equal(await evaluate(`return fetch('/api/public/auth/me', {
+                    headers: {Authorization: 'Bearer ${revokedToken}'}
+                }).then(response => response.status)`), 401);
                 assert.deepEqual(errors, []);
             });
         } finally {

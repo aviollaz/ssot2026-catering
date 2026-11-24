@@ -20,6 +20,11 @@ export type NuevoPedidoResponse = {id: string; total: number};
 export type EstadoPedidoResponse = Pick<Pedido, 'estado' | 'fecha_evento' | 'personas' | 'total'>;
 export type PedidoCuenta = Pick<Pedido, 'id' | 'estado' | 'fecha_evento' | 'personas' | 'total'>;
 export type PedidoLinkResponse = {associated: boolean};
+export type PedidoRepeticion = Pick<Pedido, 'cliente_nombre' | 'cliente_email' | 'cliente_telefono' | 'direccion' |
+    'personas' | 'observaciones' | 'cod_servicio'> & {
+    platos: {cod_plato: string; porciones: number}[];
+};
+export type PedidoCanceladoResponse = {cancelled: true};
 
 // Admin: tables that can go to Excel; `contacto` marks those holding customers' contact data.
 export type ExportablesResponse = {name: string; contacto: boolean}[];

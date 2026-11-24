@@ -1,16 +1,17 @@
 // Public catalog and status page; customer accounts are optional.
-import type {ApiError, CustomerLoginResponse} from '../backend/browser-contract.js';
+import type {ApiError, AuthenticatedCustomer, CustomerLoginResponse} from '../backend/browser-contract.js';
 import type {CatalogoResponse, CatalogoServicio, EstadoPedidoResponse, NuevoPedido, NuevoPedidoResponse, PedidoCuenta,
-    PedidoLinkResponse} from '../backend/catering-contract.js';
+    PedidoCanceladoResponse, PedidoLinkResponse, PedidoRepeticion} from '../backend/catering-contract.js';
 import {element} from './dom.js';
 import {messageOf} from './messages.js';
 
 const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
 const pesos = (value: number) => `$ ${value.toLocaleString('es-AR')}`;
 const fechaHora = (value: string) => new Date(value).toLocaleString('es-AR', {dateStyle: 'full', timeStyle: 'short'});
-const pasos = ['menu', 'evento', 'contacto', 'resumen', 'listo', 'consulta'] as const;
+const pasos = ['menu', 'evento', 'contacto', 'resumen', 'listo', 'consulta', 'inicio'] as const;
 type Paso = typeof pasos[number];
 const categorias = {Entrada: 'Entradas', Principal: 'Principales', Postre: 'Postres', Bebida: 'Bebidas', 'Finger food': 'Finger food'} as const;
+const customerSessionKey = 'ssot2026.customer-session';
 
 const error = $<HTMLElement>('#error');
 const personas = $<HTMLInputElement>('#personas');
@@ -19,20 +20,81 @@ const contacto = $<HTMLFormElement>('#paso-contacto');
 
 let catalogo: CatalogoResponse;
 let tokenCliente: string | undefined;
+let clienteActual: AuthenticatedCustomer | undefined;
 let pedidoConfirmadoId: string | undefined;
 let modo: 'servicio' | 'carta' = 'servicio';
 let servicio: CatalogoServicio | undefined;
 const porciones = new Map<string, number>();
 
-async function api<T>(path: string, body?: unknown, token?: string): Promise<T> {
-    const response = await fetch(path, body === undefined ? {headers: token ? {Authorization: `Bearer ${token}`} : {}} : {
-        method: 'POST', headers: {'Content-Type': 'application/json', ...(token ? {Authorization: `Bearer ${token}`} : {})}, body: JSON.stringify(body),
+async function api<T>(path: string, body?: unknown, token?: string, method?: 'GET' | 'POST' | 'DELETE'): Promise<T> {
+    const response = await fetch(path, {
+        method: method ?? (body === undefined ? 'GET' : 'POST'),
+        headers: {'Content-Type': 'application/json', ...(token ? {Authorization: `Bearer ${token}`} : {})},
+        cache: 'no-store',
+        ...(body === undefined ? {} : {body: JSON.stringify(body)}),
     });
     if (!response.ok) {
+        if (response.status === 401 && token === tokenCliente) clearCustomerSession();
         const failure = await response.json() as ApiError;
         throw new Error(failure.problems?.length ? failure.problems.map(problem => messageOf(problem)).join(' ') : failure.error);
     }
+    if (response.status === 204) return undefined as T;
     return response.json() as Promise<T>;
+}
+
+function clearCustomerSession(): void {
+    const hadSession = tokenCliente !== undefined;
+    tokenCliente = undefined;
+    clienteActual = undefined;
+    localStorage.removeItem(customerSessionKey);
+    actualizarIdentidadCliente();
+    if (hadSession) window.dispatchEvent(new Event('customersessionexpired'));
+}
+
+function saveCustomerSession(session: CustomerLoginResponse): void {
+    tokenCliente = session.token;
+    clienteActual = session.customer;
+    localStorage.setItem(customerSessionKey, JSON.stringify({
+        token: session.token,
+        expiresAt: Date.now() + session.expiresIn * 1000,
+    }));
+    actualizarIdentidadCliente();
+}
+
+function actualizarIdentidadCliente(): void {
+    const autenticado = Boolean(tokenCliente && clienteActual);
+    $('#cliente-nav').hidden = !autenticado;
+    const nombre = contacto.elements.namedItem('cliente_nombre_pila') as HTMLInputElement;
+    const apellido = contacto.elements.namedItem('cliente_apellido') as HTMLInputElement;
+    const email = contacto.elements.namedItem('cliente_email') as HTMLInputElement;
+    nombre.readOnly = autenticado;
+    apellido.readOnly = autenticado;
+    email.readOnly = autenticado;
+    if (autenticado && clienteActual) {
+        email.value = clienteActual.email;
+        if (clienteActual.nombre) nombre.value = clienteActual.nombre;
+        if (clienteActual.apellido) apellido.value = clienteActual.apellido;
+    }
+}
+
+async function restoreCustomerSession(): Promise<void> {
+    const saved = localStorage.getItem(customerSessionKey);
+    if (!saved) return;
+    let session: {token?: unknown; expiresAt?: unknown};
+    try { session = JSON.parse(saved) as {token?: unknown; expiresAt?: unknown}; }
+    catch {
+        clearCustomerSession();
+        return;
+    }
+    if (typeof session.token !== 'string' || typeof session.expiresAt !== 'number' || session.expiresAt <= Date.now()) {
+        clearCustomerSession();
+        return;
+    }
+    tokenCliente = session.token;
+    try { clienteActual = await api<AuthenticatedCustomer>('/api/public/auth/me', undefined, tokenCliente); }
+    catch (failure) {
+        if (tokenCliente) throw failure;
+    }
 }
 
 function mostrar(paso: Paso): void {
@@ -50,9 +112,11 @@ function mostrar(paso: Paso): void {
 
 // A local datetime-local value: the earliest event the catering accepts.
 function minimoEvento(): string {
-    const date = new Date(Date.now() + catalogo.anticipacionDias * 24 * 60 * 60 * 1000);
-    date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
-    return date.toISOString().slice(0, 16);
+    const date = new Date();
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() + catalogo.anticipacionDias);
+    const pad = (value: number) => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T00:00`;
 }
 
 function elegirModo(nuevo: typeof modo): void {
@@ -116,7 +180,8 @@ function pedido(): NuevoPedido {
     const datos = new FormData(contacto);
     const texto = (name: string) => String(datos.get(name) ?? '').trim();
     const cliente = {
-        cliente_nombre: texto('cliente_nombre'), cliente_email: texto('cliente_email'),
+        cliente_nombre: `${texto('cliente_nombre_pila')} ${texto('cliente_apellido')}`.trim(),
+        cliente_email: texto('cliente_email'),
         cliente_telefono: texto('cliente_telefono'), direccion: texto('direccion'),
         fecha_evento: fecha.value, personas: personas.valueAsNumber, observaciones: texto('observaciones') || null,
     };
@@ -159,6 +224,113 @@ function resumen(): void {
     $('#resumen').replaceChildren(detalle, lista);
 }
 
+function prepararRepeticion(repetido: PedidoRepeticion): void {
+    const [nombre, ...apellido] = repetido.cliente_nombre.trim().split(/\s+/);
+    for (const [name, value] of Object.entries({
+        cliente_nombre_pila: nombre ?? '', cliente_apellido: apellido.join(' '), cliente_email: repetido.cliente_email,
+        cliente_telefono: repetido.cliente_telefono, direccion: repetido.direccion,
+        observaciones: repetido.observaciones ?? '',
+    })) {
+        (contacto.elements.namedItem(name) as HTMLInputElement | HTMLTextAreaElement).value = value;
+    }
+    personas.value = String(repetido.personas);
+    fecha.value = '';
+    porciones.clear();
+    servicio = undefined;
+    if (repetido.cod_servicio) {
+        servicio = catalogo.servicios.find(item => item.cod_servicio === repetido.cod_servicio);
+        if (!servicio) throw new Error('El menú de este pedido ya no está disponible para repetirlo.');
+        elegirModo('servicio');
+    } else {
+        const disponibles = new Set(catalogo.platos.map(plato => plato.cod_plato));
+        if (repetido.platos.some(plato => !disponibles.has(plato.cod_plato))) {
+            throw new Error('Algunos platos de este pedido ya no están disponibles para repetirlo.');
+        }
+        for (const plato of repetido.platos) porciones.set(plato.cod_plato, plato.porciones);
+        elegirModo('carta');
+        cartaPorCategoria();
+    }
+    tarjetasServicios();
+}
+
+async function mostrarPedidos(sesion: AuthenticatedCustomer): Promise<void> {
+    if (!tokenCliente) throw new Error('Iniciá sesión para continuar.');
+    $('#inicio-identidad').textContent = `Sesión iniciada como ${sesion.email}`;
+    $('#inicio-sin-sesion').hidden = true;
+    $('#inicio-con-sesion').hidden = false;
+    const perfilPendiente = sesion.nombre === null || sesion.apellido === null;
+    $('#inicio-perfil-pendiente').hidden = !perfilPendiente;
+    $('#inicio-pedidos-panel').hidden = perfilPendiente;
+    if (perfilPendiente) {
+        $<HTMLFormElement>('#inicio-perfil-form').reset();
+        return;
+    }
+    const aviso = $('#inicio-aviso');
+    if (pedidoConfirmadoId) {
+        try {
+            const vinculo = await api<PedidoLinkResponse>(
+                `/api/public/mis-pedidos/${encodeURIComponent(pedidoConfirmadoId)}`, {}, tokenCliente);
+            aviso.hidden = vinculo.associated;
+            aviso.textContent = vinculo.associated ? '' :
+                'El pedido recién realizado no se asoció porque el email del pedido no coincide con el de tu cuenta.';
+        } catch (failure) {
+            aviso.hidden = false;
+            aviso.textContent = failure instanceof Error ? failure.message : 'No pudimos asociar el pedido recién realizado.';
+        }
+        pedidoConfirmadoId = undefined;
+    } else aviso.hidden = true;
+    const pedidos = await api<PedidoCuenta[]>('/api/public/mis-pedidos', undefined, tokenCliente);
+    $('#inicio-identidad').textContent = `Sesión iniciada como ${sesion.email}`;
+    const lista = $('#inicio-pedidos');
+    if (!pedidos.length) {
+        lista.replaceChildren(element('p', 'Todavía no hay pedidos asociados a esta cuenta. Hacé un pedido con este mismo email para verlo acá.'));
+    } else {
+        lista.replaceChildren(...pedidos.map(item => {
+            const tarjeta = element('article');
+            const codigo = element('code', item.id);
+            const consultar = element('a', 'Consultar estado');
+            consultar.href = `/pedidos?codigo=${encodeURIComponent(item.id)}`;
+            tarjeta.append(element('p', `Pedido del ${fechaHora(item.fecha_evento)}`), codigo,
+                element('p', `${item.personas} personas · ${pesos(item.total)} · ${item.estado}`), consultar);
+            const acciones = element('div');
+            acciones.className = 'nav';
+            const repetir = element('button', 'Repetir pedido');
+            repetir.type = 'button';
+            repetir.onclick = async () => {
+                repetir.disabled = true;
+                try {
+                    const detalle = await api<PedidoRepeticion>(
+                        `/api/public/mis-pedidos/${encodeURIComponent(item.id)}`, undefined, tokenCliente);
+                    prepararRepeticion(detalle);
+                    mostrar('menu');
+                } catch (failure) {
+                    $('#inicio-error').textContent = failure instanceof Error ? failure.message : 'No pudimos repetir el pedido.';
+                } finally { repetir.disabled = false; }
+            };
+            acciones.append(repetir);
+            if (item.estado === 'Pendiente') {
+                const cancelar = element('button', 'Cancelar pedido');
+                cancelar.type = 'button';
+                cancelar.onclick = async () => {
+                    if (!window.confirm('¿Querés cancelar este pedido pendiente?')) return;
+                    cancelar.disabled = true;
+                    try {
+                        await api<PedidoCanceladoResponse>(`/api/public/mis-pedidos/${encodeURIComponent(item.id)}`,
+                            undefined, tokenCliente, 'DELETE');
+                        await mostrarPedidos(sesion);
+                    } catch (failure) {
+                        $('#inicio-error').textContent = failure instanceof Error ? failure.message : 'No pudimos cancelar el pedido.';
+                    } finally { cancelar.disabled = false; }
+                };
+                acciones.append(cancelar);
+            }
+            tarjeta.append(acciones);
+            return tarjeta;
+        }));
+    }
+    $('#inicio-error').textContent = '';
+}
+
 async function consultar(codigo: string): Promise<void> {
     mostrar('consulta');
     const resultado = $('#consulta-resultado');
@@ -182,7 +354,33 @@ async function iniciar(): Promise<void> {
         button.onclick = () => mostrar(pasos[pasos.indexOf(button.closest<HTMLElement>('.step')!.id.slice(5) as Paso) - 1]!);
     }
     const codigo = new URLSearchParams(location.search).get('codigo');
+    pedidoConfirmadoId = new URLSearchParams(location.search).get('pedido') ?? undefined;
+    window.addEventListener('customersessionexpired', () => {
+        actualizarIdentidadCliente();
+        $('#inicio-con-sesion').hidden = true;
+        $('#inicio-sin-sesion').hidden = false;
+        $('#inicio-error').textContent = 'La sesión venció o ya no es válida. Iniciá sesión nuevamente.';
+    });
+    $('#cliente-logout').onclick = async () => {
+        try {
+            if (tokenCliente) await api<void>('/api/public/auth/logout', {}, tokenCliente);
+        } catch (failure) {
+            const message = failure instanceof Error ? failure.message : 'No pudimos cerrar la sesión en el servidor.';
+            error.textContent = message;
+            $('#inicio-error').textContent = message;
+        } finally {
+            clearCustomerSession();
+            $('#inicio-con-sesion').hidden = true;
+            $('#inicio-sin-sesion').hidden = false;
+        }
+    };
+    await restoreCustomerSession();
+    actualizarIdentidadCliente();
     if (codigo) return consultar(codigo.trim());
+    if (tokenCliente && (!clienteActual?.nombre || !clienteActual.apellido) && location.pathname !== '/inicio') {
+        location.assign('/inicio');
+        return;
+    }
 
     catalogo = await api<CatalogoResponse>('/api/public/catalogo');
     tarjetasServicios();
@@ -199,13 +397,24 @@ async function iniciar(): Promise<void> {
             (modo === 'servicio' ? ` y para ${servicio!.min_personas} personas o más.` : '.');
         mostrar('evento');
     };
-    $<HTMLFormElement>('#paso-evento').onsubmit = event => { event.preventDefault(); mostrar('contacto'); };
+    $<HTMLFormElement>('#paso-evento').onsubmit = event => {
+        event.preventDefault();
+        fecha.min = minimoEvento();
+        if (!fecha.reportValidity()) return;
+        mostrar('contacto');
+    };
     contacto.onsubmit = event => {
         event.preventDefault();
         resumen();
         mostrar('resumen');
     };
     const seleccionarCuenta = (modoCuenta: 'login' | 'registro') => {
+        if (modoCuenta === 'registro' && (!contacto.elements.namedItem('cliente_nombre_pila') ||
+            !(contacto.elements.namedItem('cliente_nombre_pila') as HTMLInputElement).value.trim() ||
+            !(contacto.elements.namedItem('cliente_apellido') as HTMLInputElement).value.trim())) {
+            $('#cuenta-error').textContent = 'Para crear una cuenta, completá tu nombre y apellido en los datos del pedido.';
+            return;
+        }
         $('#cuenta-error').textContent = '';
         for (const button of document.querySelectorAll<HTMLButtonElement>('[data-cuenta]')) {
             button.setAttribute('aria-pressed', String(button.dataset['cuenta'] === modoCuenta));
@@ -233,49 +442,27 @@ async function iniciar(): Promise<void> {
     const abrirCuenta = () => {
         if (!tokenCliente) {
             const email = String(new FormData(contacto).get('cliente_email') ?? '');
-            for (const form of [$<HTMLFormElement>('#cuenta-login'), $<HTMLFormElement>('#cuenta-registro')]) {
-                (form.elements.namedItem('email') as HTMLInputElement).value = email;
-            }
+            ($<HTMLFormElement>('#cuenta-login').elements.namedItem('email') as HTMLInputElement).value = email;
+            ($<HTMLFormElement>('#cuenta-registro').elements.namedItem('email') as HTMLInputElement).value = email;
+            seleccionarCuenta('login');
         }
         cuentaDialog.showModal();
     };
-    $('#abrir-cuenta').onclick = abrirCuenta;
+    $('#abrir-cuenta').onclick = () => {
+        if (tokenCliente) location.assign('/inicio');
+        else abrirCuenta();
+    };
+    $('#abrir-cuenta-inicio').onclick = abrirCuenta;
 
     const cargarMisPedidos = async (sesion: CustomerLoginResponse) => {
-        tokenCliente = sesion.token;
-        let asociado = false;
-        let errorVinculo = '';
-        if (pedidoConfirmadoId) {
-            try {
-                const vinculo = await api<PedidoLinkResponse>(`/api/public/mis-pedidos/${encodeURIComponent(pedidoConfirmadoId)}`, {}, tokenCliente);
-                asociado = vinculo.associated;
-            } catch (failure) {
-                errorVinculo = failure instanceof Error ? failure.message : 'No pudimos asociar este pedido a tu cuenta.';
-            }
+        saveCustomerSession(sesion);
+        if (location.pathname !== '/inicio') {
+            const query = pedidoConfirmadoId ? `?pedido=${encodeURIComponent(pedidoConfirmadoId)}` : '';
+            location.assign(`/inicio${query}`);
+            return;
         }
-        const pedidos = await api<PedidoCuenta[]>('/api/public/mis-pedidos', undefined, tokenCliente);
-        const aviso = $('#cuenta-pedido-aviso');
-        aviso.hidden = asociado && !errorVinculo;
-        aviso.textContent = errorVinculo || (asociado ? '' :
-            'Este pedido no se asoció porque el email del pedido no coincide con el de tu cuenta.');
-        const lista = $('#lista-pedidos');
-        if (!pedidos.length) {
-            lista.replaceChildren(element('p', 'Todavía no hay pedidos asociados a esta cuenta. Usá el mismo email del pedido para vincularlo.'));
-        } else {
-            lista.replaceChildren(...pedidos.map(item => {
-                const tarjeta = element('article');
-                const codigo = element('code', item.id);
-                const consultar = element('a', 'Consultar estado');
-                consultar.href = `/pedidos?codigo=${encodeURIComponent(item.id)}`;
-                tarjeta.append(element('p', `Pedido del ${fechaHora(item.fecha_evento)}`), codigo,
-                    element('p', `${item.personas} personas · ${pesos(item.total)} · ${item.estado}`), consultar);
-                return tarjeta;
-            }));
-        }
-        $('#cuenta-formulario').hidden = true;
-        $('#cuenta-pedidos').hidden = false;
-        $('#omitir-cuenta').textContent = 'Cerrar';
-        $('#titulo-cuenta').textContent = `Mis pedidos · ${sesion.customer.email}`;
+        cuentaDialog.close();
+        await mostrarPedidos(sesion.customer);
     };
     $<HTMLFormElement>('#cuenta-login').onsubmit = async event => {
         event.preventDefault();
@@ -291,16 +478,41 @@ async function iniciar(): Promise<void> {
     $<HTMLFormElement>('#cuenta-registro').onsubmit = async event => {
         event.preventDefault();
         const datos = new FormData(event.currentTarget as HTMLFormElement);
+        const pedidoDatos = new FormData(contacto);
         try {
             await cargarMisPedidos(await api<CustomerLoginResponse>('/api/public/auth/register', {
-                email: datos.get('email'), contrasena: datos.get('contrasena'),
+                email: datos.get('email'),
+                nombre: pedidoDatos.get('cliente_nombre_pila'), apellido: pedidoDatos.get('cliente_apellido'),
+                contrasena: datos.get('contrasena'),
             }));
         } catch (failure) {
             $('#cuenta-error').textContent = failure instanceof Error ? failure.message : 'No pudimos crear tu cuenta.';
         }
     };
+    $<HTMLFormElement>('#inicio-perfil-form').onsubmit = async event => {
+        event.preventDefault();
+        const form = event.currentTarget as HTMLFormElement;
+        const button = form.querySelector<HTMLButtonElement>('button[type=submit]')!;
+        button.disabled = true;
+        try {
+            const data = new FormData(form);
+            clienteActual = await api<AuthenticatedCustomer>('/api/public/auth/profile', {
+                nombre: data.get('nombre'), apellido: data.get('apellido'),
+            }, tokenCliente);
+            actualizarIdentidadCliente();
+            await mostrarPedidos(clienteActual);
+        } catch (failure) {
+            $('#inicio-error').textContent = failure instanceof Error ? failure.message : 'No pudimos guardar tu perfil.';
+        } finally { button.disabled = false; }
+    };
     const confirmar = $<HTMLButtonElement>('#confirmar');
     confirmar.onclick = async () => {
+        fecha.min = minimoEvento();
+        if (fecha.value < fecha.min) {
+            mostrar('evento');
+            fecha.reportValidity();
+            return;
+        }
         confirmar.disabled = true;
         try {
             const {id} = await api<NuevoPedidoResponse>('/api/public/pedidos', pedido(), tokenCliente);
@@ -308,12 +520,24 @@ async function iniciar(): Promise<void> {
             $('#codigo').textContent = id;
             $<HTMLAnchorElement>('#link-consulta').href = `/pedidos?codigo=${encodeURIComponent(id)}`;
             mostrar('listo');
-            abrirCuenta();
+            if (tokenCliente) $('#abrir-cuenta').textContent = 'Ver mis pedidos';
+            else abrirCuenta();
         } catch (failure) {
             error.textContent = failure instanceof Error ? failure.message : 'No pudimos registrar el pedido.';
         } finally { confirmar.disabled = false; }
     };
-    mostrar('menu');
+    if (location.pathname === '/inicio') {
+        mostrar('inicio');
+        if (tokenCliente && clienteActual) await mostrarPedidos(clienteActual);
+        else {
+            $('#inicio-con-sesion').hidden = true;
+            $('#inicio-sin-sesion').hidden = false;
+        }
+    } else mostrar('menu');
 }
 
-iniciar().catch(() => { error.textContent = 'No pudimos cargar el catálogo. Probá de nuevo en unos minutos.'; });
+iniciar().catch(failure => {
+    const message = failure instanceof Error ? failure.message : 'No pudimos cargar la información.';
+    error.textContent = message;
+    $('#inicio-error').textContent = message;
+});

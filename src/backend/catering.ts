@@ -11,7 +11,8 @@ import {entityTable, insertPreparedRow, prepareEntityWrite} from './entity-write
 import {cateringConfig} from './catering-config.js';
 import {datosDeContacto, exportables, exportarTablas} from './exportar.js';
 import {localDateTime} from './value-types.js';
-import type {CatalogoResponse, EstadoPedidoResponse, ExportablesResponse, NuevoPedidoResponse, PedidoCuenta, PedidoLinkResponse} from './catering-contract.js';
+import type {CatalogoResponse, EstadoPedidoResponse, ExportablesResponse, NuevoPedidoResponse, PedidoCanceladoResponse,
+    PedidoCuenta, PedidoLinkResponse, PedidoRepeticion} from './catering-contract.js';
 
 type Db = Pick<Pool, 'query' | 'connect'>;
 type EstadoPedido = StoredRow<'pedidos'>['estado'];
@@ -54,6 +55,13 @@ export async function catalogo(db: Pick<Pool, 'query'>): Promise<CatalogoRespons
     return {platos: platos.rows, servicios: servicios.rows, anticipacionDias: cateringConfig.anticipacionDias};
 }
 
+function fechaMinimaEvento(ahora: Date): string {
+    const fecha = new Date(ahora);
+    fecha.setHours(0, 0, 0, 0);
+    fecha.setDate(fecha.getDate() + cateringConfig.anticipacionDias);
+    return localDateTime(fecha).slice(0, 10);
+}
+
 type Linea = {cod_plato: string; porciones: number; precio_porcion: number};
 
 /* Creates an order and its dishes in one transaction, validated by the SSOT. The total always comes
@@ -75,7 +83,7 @@ export async function crearPedido(db: Db, body: unknown, opciones: {estado?: Est
     pedido['cliente_id'] = opciones.clienteId ?? null;
     const personas = pedido['personas'] as number;
     const ahora = opciones.ahora === undefined ? new Date() : opciones.ahora;
-    if (ahora && Date.parse(pedido['fecha_evento'] as string) < ahora.getTime() + cateringConfig.anticipacionDias * 24 * 60 * 60 * 1000) {
+    if (ahora && (pedido['fecha_evento'] as string).slice(0, 10) < fechaMinimaEvento(ahora)) {
         throw new ApiFailure(400, `El evento tiene que ser con al menos ${cateringConfig.anticipacionDias} días de anticipación.`);
     }
     return enTransaccion(db, async client => {
@@ -162,13 +170,23 @@ export function registerCateringApi(app: Express, pool: Db, auth: Authentication
     admin.use(apiErrorHandler);
     app.use('/api/catering', admin);
 
-    // Ordering and status lookup are public; an account is optional and provides an order history.
+    // Ordering/status lookup are public; account operations are scoped to orders linked to the customer.
     const pub = express.Router();
     pub.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
     pub.use(express.json({limit: '16kb'}));
     pub.get('/catalogo', async (_req, res) => { res.json(await catalogo(pool)); });
     pub.post('/pedidos', customerAuth.optionalCustomer, authenticationLimit(), async (req, res) => {
-        const customer = res.locals['customer'] as {id: string} | undefined;
+        const customer = res.locals['customer'] as ReturnType<typeof customerPrincipal> | undefined;
+        if (customer) {
+            if (!customer.nombre || !customer.apellido) throw new ApiFailure(409, 'Completá tu perfil antes de hacer un pedido.');
+            const body = readObject(req.body, ['cliente_nombre', 'cliente_email'], [
+                'cliente_telefono', 'direccion', 'fecha_evento', 'personas', 'observaciones', 'cod_servicio', 'platos',
+            ]);
+            if (body['cliente_nombre'] !== `${customer.nombre} ${customer.apellido}` || typeof body['cliente_email'] !== 'string' ||
+                body['cliente_email'].trim().toLowerCase() !== customer.email) {
+                throw new ApiFailure(400, 'Los pedidos con sesión deben usar el nombre, apellido y email de tu perfil.');
+            }
+        }
         const result = await crearPedido(pool, req.body, customer ? {clienteId: customer.id} : {});
         publish('pedidos');
         publish('pedido_platos');
@@ -180,6 +198,18 @@ export function registerCateringApi(app: Express, pool: Db, auth: Authentication
             FROM ${T.pedidos} WHERE cliente_id = $1 ORDER BY creado DESC, id`, [customer.id]);
         res.json(rows);
     });
+    pub.get('/mis-pedidos/:id', customerAuth.requireCustomer, async (req, res) => {
+        const customer = customerPrincipal(res);
+        const id = readId(req.params['id']);
+        const {rows} = await pool.query<PedidoRepeticion>(`SELECT cliente_nombre, cliente_email, cliente_telefono, direccion,
+                personas, observaciones, cod_servicio
+            FROM ${T.pedidos} WHERE id = $1 AND cliente_id = $2`, [id, customer.id]);
+        const pedido = rows[0];
+        if (!pedido) throw new ApiFailure(404, 'El pedido no existe.');
+        const platos = await pool.query<PedidoRepeticion['platos'][number]>(
+            `SELECT cod_plato, porciones FROM ${T.pedido_platos} WHERE pedido = $1 ORDER BY cod_plato`, [id]);
+        res.json({...pedido, platos: platos.rows} satisfies PedidoRepeticion);
+    });
     pub.post('/mis-pedidos/:id', customerAuth.requireCustomer, async (req, res) => {
         const customer = customerPrincipal(res);
         const id = readId(req.params['id']);
@@ -187,6 +217,20 @@ export function registerCateringApi(app: Express, pool: Db, auth: Authentication
             WHERE id = $2 AND LOWER(cliente_email) = LOWER($3) AND (cliente_id IS NULL OR cliente_id = $1)`,
         [customer.id, id, customer.email]);
         res.json({associated: rowCount === 1} satisfies PedidoLinkResponse);
+    });
+    pub.delete('/mis-pedidos/:id', customerAuth.requireCustomer, async (req, res) => {
+        const customer = customerPrincipal(res);
+        const id = readId(req.params['id']);
+        const cancelled = await pool.query(`UPDATE ${T.pedidos} SET estado = 'Cancelado'
+            WHERE id = $1 AND cliente_id = $2 AND estado = 'Pendiente' RETURNING id`, [id, customer.id]);
+        if (!cancelled.rowCount) {
+            const owned = await pool.query<{estado: EstadoPedido}>(`SELECT estado FROM ${T.pedidos}
+                WHERE id = $1 AND cliente_id = $2`, [id, customer.id]);
+            if (!owned.rowCount) throw new ApiFailure(404, 'El pedido no existe.');
+            throw new ApiFailure(409, 'Solo podés cancelar pedidos pendientes.');
+        }
+        publish('pedidos');
+        res.json({cancelled: true} satisfies PedidoCanceladoResponse);
     });
     pub.get('/pedidos/:id', async (req, res) => {
         const {rows} = await pool.query<EstadoPedidoResponse>(

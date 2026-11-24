@@ -14,11 +14,11 @@ import type {CustomerLoginResponse, StoredRow} from './api-contract.js';
 const entity = completeEntity(myContext, myEntities.clientes);
 const sql = entitySql('clientes');
 const column = sql.column;
-const session = sql.select('id', 'email', 'version_sesion');
+const session = sql.select('id', 'email', 'nombre', 'apellido', 'version_sesion');
 const credentials = sql.select(...session.fields, 'contrasena_hash');
 type CustomerSession = Pick<StoredRow<'clientes'>, typeof session.fields[number]>;
-export type AuthenticatedCustomer = {id: string; email: string};
-const publicCustomer = ({id, email}: AuthenticatedCustomer): AuthenticatedCustomer => ({id, email});
+export type AuthenticatedCustomer = {id: string; email: string; nombre: string | null; apellido: string | null};
+const publicCustomer = ({id, email, nombre, apellido}: AuthenticatedCustomer): AuthenticatedCustomer => ({id, email, nombre, apellido});
 export const customerPrincipal = (res: Response): AuthenticatedCustomer => {
     const customer = res.locals['customer'] as AuthenticatedCustomer | undefined;
     if (!customer) throw new ApiFailure(401, 'Iniciá sesión para continuar.');
@@ -33,6 +33,14 @@ function readEmail(value: unknown): string {
         throw new ApiFailure(400, 'Ingresá un email válido.');
     }
     return email;
+}
+
+function readName(value: unknown, field: 'nombre' | 'apellido'): string {
+    const name = typeof value === 'string' ? value.trim() : '';
+    if (!name || name.length > entity.fields[field].maxLength) {
+        throw new ApiFailure(400, field === 'nombre' ? 'Ingresá tu nombre.' : 'Ingresá tu apellido.');
+    }
+    return name;
 }
 
 export function createCustomerAuthentication(pool: Pick<Pool, 'query'>, secret = process.env['JWT_SECRET'] ?? '') {
@@ -88,14 +96,18 @@ export function registerCustomerAuthApi(app: Express, pool: Pick<Pool, 'query'>,
     const limit = authenticationLimit();
 
     router.post('/register', limit, async (req, res) => {
-        const body = readObject(req.body, ['email', 'contrasena']);
-        const row = await prepareEntityWrite(entity, {email: readEmail(body['email']), contrasena: body['contrasena']}, 'create');
+        const body = readObject(req.body, ['email', 'nombre', 'apellido', 'contrasena']);
+        const row = await prepareEntityWrite(entity, {
+            email: readEmail(body['email']), nombre: readName(body['nombre'], 'nombre'),
+            apellido: readName(body['apellido'], 'apellido'), contrasena: body['contrasena'],
+        }, 'create');
         await insertPreparedRow(pool, entity, row);
-        const {id, email, version_sesion} = row;
-        if (typeof id !== 'string' || typeof email !== 'string' || typeof version_sesion !== 'string') {
+        const {id, email, nombre, apellido, version_sesion} = row;
+        if (typeof id !== 'string' || typeof email !== 'string' || typeof nombre !== 'string' ||
+            typeof apellido !== 'string' || typeof version_sesion !== 'string') {
             throw new Error('No se pudo preparar la cuenta del cliente.');
         }
-        res.status(201).json(await auth.issueToken({id, email, version_sesion}));
+        res.status(201).json(await auth.issueToken({id, email, nombre, apellido, version_sesion}));
     });
 
     router.post('/login', limit, async (req, res) => {
@@ -116,6 +128,16 @@ export function registerCustomerAuthApi(app: Express, pool: Pick<Pool, 'query'>,
     });
 
     router.get('/me', auth.requireCustomer, (_req, res) => { res.json(customerPrincipal(res)); });
+    router.post('/profile', auth.requireCustomer, async (req, res) => {
+        const customer = customerPrincipal(res);
+        const body = readObject(req.body, ['nombre', 'apellido']);
+        const nombre = readName(body['nombre'], 'nombre'), apellido = readName(body['apellido'], 'apellido');
+        const result = await pool.query(`UPDATE ${sql.table} SET ${column('nombre')} = $1, ${column('apellido')} = $2
+            WHERE ${column('id')} = $3 AND (${column('nombre')} IS NULL OR ${column('apellido')} IS NULL)
+            RETURNING ${column('id')}`, [nombre, apellido, customer.id]);
+        if (!result.rowCount) throw new ApiFailure(409, 'El perfil ya tiene nombre y apellido. Actualizá la página para continuar.');
+        res.json({...customer, nombre, apellido});
+    });
     router.post('/logout', auth.requireCustomer, async (_req, res) => {
         await pool.query(`UPDATE ${sql.table} SET ${column('version_sesion')} = $1 WHERE ${column('id')} = $2`,
             [randomUUID(), customerPrincipal(res).id]);

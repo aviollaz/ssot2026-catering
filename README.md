@@ -13,11 +13,17 @@ TP grupal sobre el repo de la clase: un gestor para empresas de catering (plan e
 - **Página para clientes** (`/pedidos`): elegir un menú armado o platos a la carta,
   fecha, personas y datos de contacto; para confirmar, iniciar sesión o registrarse.
   Cada cuenta de cliente es independiente de `usuarios` (administradores) y solo
-  puede usar el flujo de pedidos. Devuelve un código para consultar el estado.
+  puede usar el flujo de pedidos. La sesión se conserva entre visitas y `/inicio`
+  permite consultar pedidos asociados, repetir pedidos anteriores, crear pedidos
+  nuevos y cancelar únicamente los que sigan pendientes. Cada pedido también devuelve
+  un código para consultar el estado.
 
 La lógica de la página de clientes está en `src/backend/catering.ts` (API `/api/public`,
 pública para catálogo y consulta) y `src/backend/customer-auth.ts` (registro y acceso de
-clientes); el frontend en `src/frontend/pedido.ts`. La exportación a Excel (`/api/catering`,
+clientes); el frontend en `src/frontend/pedido.ts` guarda el JWT de cliente en el
+almacenamiento local y lo valida contra `/api/public/auth/me` al volver. La API sólo
+permite repetir/ver o cancelar pedidos asociados a la cuenta autenticada y el servidor
+verifica el estado pendiente al cancelar. La exportación a Excel (`/api/catering`,
 con sesión administrativa) está en `exportar.ts` y `xlsx.ts`. `npm run test:catering` prueba
 la API pública, la carga de pedidos de ejemplo y la exportación contra una base aislada.
 
@@ -419,6 +425,13 @@ The backend rejects missing/short secrets. Apply the included incremental migrat
 with `npm run migration:apply`; the catalog creates `usuarios`, removes obsolete
 administrator role/status columns in `0003_authenticated_administrators`, and adds
 the separate customer accounts and order relationship in `0010_customer_accounts`.
+The customer first name is added in `0011_customer_profiles` and the surname in
+`0012_customer_profiles`, both nullable for compatibility with existing accounts.
+New registrations collect both fields together, so no profile-completion step is
+shown after successful registration; older accounts may complete missing fields once.
+The customer's normalized, unique email remains the account identifier.
+The minimum event date is the start of the calendar day reached after the configured
+number of days; the browser and server use that same day boundary.
 
 On cold start, the backend initializes the first account before listening for
 requests. If `usuarios` is empty, `AUTH_ADMIN_USERNAME` and `AUTH_ADMIN_PASSWORD`

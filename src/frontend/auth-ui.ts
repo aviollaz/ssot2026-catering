@@ -29,6 +29,17 @@ export function initializeAuthentication(onSession: (active: boolean) => void): 
         focus.focus();
     }
 
+    for (const button of document.querySelectorAll<HTMLButtonElement>('.toggle-password')) {
+        button.onclick = () => {
+            const input = button.closest<HTMLElement>('.secret-field')!.querySelector<HTMLInputElement>('input')!;
+            const visible = input.type === 'password';
+            input.type = visible ? 'text' : 'password';
+            button.textContent = visible ? 'Ocultar' : 'Mostrar';
+            button.setAttribute('aria-label', visible ? 'Ocultar contraseña' : 'Mostrar contraseña');
+            button.setAttribute('aria-pressed', String(visible));
+        };
+    }
+
     function signedOut(): void {
         clearSession();
         panel.hidden = false;
@@ -50,6 +61,13 @@ export function initializeAuthentication(onSession: (active: boolean) => void): 
         catch (failure) { error.textContent = failure instanceof Error ? failure.message : 'No se pudo completar la operación.'; }
         finally {
             form.querySelectorAll<HTMLInputElement>('input[type=password]').forEach(input => { input.value = ''; });
+            for (const button of form.querySelectorAll<HTMLButtonElement>('.toggle-password')) {
+                const input = button.closest<HTMLElement>('.secret-field')!.querySelector<HTMLInputElement>('input')!;
+                input.type = 'password';
+                button.textContent = 'Mostrar';
+                button.setAttribute('aria-label', 'Mostrar contraseña');
+                button.setAttribute('aria-pressed', 'false');
+            }
             inputs.forEach(input => { input.disabled = false; });
             if (form === loginForm && !panel.hidden && !form.hidden) password.focus();
         }

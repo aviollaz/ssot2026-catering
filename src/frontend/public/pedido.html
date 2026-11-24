@@ -9,6 +9,14 @@
 </head>
 <body>
     <header class="hero">
+        <nav id="cliente-nav" class="customer-nav" aria-label="Navegación de cliente" hidden>
+            <a class="customer-nav-button" href="/inicio" data-tooltip="Inicio" aria-label="Inicio">
+                <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1Z"/></svg>
+            </a>
+            <button type="button" id="cliente-logout" class="customer-nav-button" data-tooltip="Cerrar sesión" aria-label="Cerrar sesión">
+                <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M10 17l5-5-5-5M15 12H3M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/></svg>
+            </button>
+        </nav>
         <p class="brand">Catering</p>
         <h1>Tu evento, servido con cuidado</h1>
         <p class="lead">Elegí un menú armado o tus platos favoritos, contanos cuándo y para cuántos, y nosotros nos ocupamos del resto.</p>
@@ -47,7 +55,8 @@
         <form id="paso-contacto" class="step" aria-labelledby="titulo-contacto" hidden>
             <h2 id="titulo-contacto">Tus datos</h2>
             <div class="grid">
-                <label>Nombre y apellido<input name="cliente_nombre" autocomplete="name" maxlength="100" required></label>
+                <label>Nombre<input name="cliente_nombre_pila" autocomplete="given-name" maxlength="100" required></label>
+                <label>Apellido<input name="cliente_apellido" autocomplete="family-name" maxlength="100" required></label>
                 <label>Email<input name="cliente_email" type="email" autocomplete="email" maxlength="254" required></label>
                 <label>Teléfono<input name="cliente_telefono" type="tel" autocomplete="tel" maxlength="40" required></label>
                 <label>Dirección del evento<input name="direccion" autocomplete="street-address" maxlength="150" required></label>
@@ -77,6 +86,32 @@
             <div id="consulta-resultado" class="summary"></div>
             <p><a href="/pedidos">Hacer otro pedido</a></p>
         </section>
+
+        <section id="paso-inicio" class="step" aria-labelledby="titulo-inicio" hidden>
+            <h2 id="titulo-inicio">Mis pedidos</h2>
+            <div id="inicio-sin-sesion">
+                <p>Iniciá sesión o creá una cuenta para consultar y administrar tus pedidos.</p>
+                <button type="button" id="abrir-cuenta-inicio" class="primary">Iniciar sesión o registrarme</button>
+            </div>
+            <div id="inicio-con-sesion" hidden>
+                <p id="inicio-identidad" class="hint"></p>
+                <p id="inicio-aviso" class="hint" hidden></p>
+                <section id="inicio-perfil-pendiente" hidden aria-labelledby="titulo-perfil-pendiente">
+                    <h3 id="titulo-perfil-pendiente">Completá tu perfil</h3>
+                    <p class="hint">Estos datos se usarán en tus pedidos.</p>
+                    <form id="inicio-perfil-form">
+                        <label>Nombre<input name="nombre" autocomplete="given-name" maxlength="100" required></label>
+                        <label>Apellido<input name="apellido" autocomplete="family-name" maxlength="100" required></label>
+                        <button type="submit" class="primary">Guardar perfil</button>
+                    </form>
+                </section>
+                <div id="inicio-pedidos-panel">
+                    <div id="inicio-pedidos" class="order-history"></div>
+                    <div class="nav"><a class="button primary" href="/pedidos">Hacer un nuevo pedido</a></div>
+                </div>
+            </div>
+            <p id="inicio-error" class="error" role="alert"></p>
+        </section>
     </main>
 
     <dialog id="cuenta-dialog" aria-labelledby="titulo-cuenta">
@@ -93,13 +128,14 @@
                 <label>Email<input name="email" type="email" autocomplete="email" placeholder="pepito@gmail.com" required></label>
                 <label>Contraseña
                     <span class="password-field">
-                        <input name="contrasena" type="password" autocomplete="current-password" required>
+                        <input name="contrasena" type="password" autocomplete="current-password" minlength="12" maxlength="128" required>
                         <button type="button" class="toggle-password" aria-label="Mostrar contraseña" aria-pressed="false">
                             <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
                             <span>Mostrar</span>
                         </button>
                     </span>
                 </label>
+                <p class="hint password-hint">La contraseña debe tener entre 12 y 128 caracteres.</p>
                 <div class="nav"><button type="submit" class="primary">Iniciar sesión</button></div>
             </form>
             <form id="cuenta-registro" hidden>
@@ -117,11 +153,6 @@
                 <div class="nav"><button type="submit" class="primary">Crear cuenta</button></div>
             </form>
         </div>
-        <section id="cuenta-pedidos" aria-labelledby="titulo-mis-pedidos" hidden>
-            <h3 id="titulo-mis-pedidos">Mis pedidos</h3>
-            <p id="cuenta-pedido-aviso" class="hint" hidden></p>
-            <div id="lista-pedidos" class="order-history"></div>
-        </section>
         <div class="dialog-actions"><button type="button" id="omitir-cuenta">Ahora no</button></div>
     </dialog>
 
