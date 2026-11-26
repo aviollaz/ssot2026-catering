@@ -20,9 +20,13 @@ type EstadoPedido = StoredRow<'pedidos'>['estado'];
 const tabla = (name: string) => compileSql(entityTable(name)).text;
 const T = {
     platos: tabla('platos'), servicios: tabla('servicios'), servicio_platos: tabla('servicio_platos'),
-    pedidos: tabla('pedidos'), pedido_platos: tabla('pedido_platos'),
+    pedidos: tabla('pedidos'), pedido_invitados: tabla('pedido_invitados'), pedido_platos: tabla('pedido_platos'),
+    clientes: tabla('clientes'),
 };
 const pedidos = completeEntity(myContext, myEntities.pedidos);
+const pedidoInvitados = completeEntity(myContext, myEntities.pedido_invitados);
+const movimientos = completeEntity(myContext, myEntities.movimientos);
+const movimientoIngredientes = completeEntity(myContext, myEntities.movimiento_ingredientes);
 const pedidoPlatos = completeEntity(myContext, myEntities.pedido_platos);
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -68,21 +72,24 @@ type Linea = {cod_plato: string; porciones: number; precio_porcion: number};
 
 /* Creates an order and its dishes in one transaction, validated by the SSOT. The total always comes
    from the server's prices. A service copies its dishes (personas × porciones_por_persona) and is
-   charged per person; an à la carte order is charged per portion. */
+   charged per person; an à la carte order is charged per portion. The name and email are kept only
+   for a guest order: an account's order reads them from clientes. */
 export async function crearPedido(db: Db, body: unknown, opciones: {estado?: EstadoPedido; ahora?: Date | null; clienteId?: string} = {}): Promise<NuevoPedidoResponse> {
-    const cliente = ['cliente_nombre', 'cliente_email', 'cliente_telefono', 'direccion', 'fecha_evento', 'personas'];
-    const input = readObject(body, cliente, ['observaciones', 'cod_servicio', 'platos']);
+    const evento = ['cliente_telefono', 'direccion', 'fecha_evento', 'personas'];
+    const input = readObject(body, ['cliente_nombre', 'cliente_email', ...evento], ['observaciones', 'cod_servicio', 'platos']);
     if (Object.hasOwn(input, 'cod_servicio') === Object.hasOwn(input, 'platos')) {
         throw new ApiFailure(400, 'Elegí un servicio o armá el pedido plato por plato.');
     }
     const pedido = await prepareEntityWrite(pedidos, {
-        ...Object.fromEntries(cliente.map(name => [name, input[name]])),
+        ...Object.fromEntries(evento.map(name => [name, input[name]])),
         observaciones: input['observaciones'] ?? null,
         cod_servicio: input['cod_servicio'] ?? null,
         estado: opciones.estado ?? 'Pendiente',
         total: 1, // validated as a placeholder, replaced below
     }, 'create');
     pedido['cliente_id'] = opciones.clienteId ?? null;
+    const invitado = opciones.clienteId ? null : await prepareEntityWrite(pedidoInvitados,
+        {pedido: pedido['id'], nombre: input['cliente_nombre'], email: input['cliente_email']}, 'create');
     const personas = pedido['personas'] as number;
     const ahora = opciones.ahora === undefined ? new Date() : opciones.ahora;
     if (ahora && (pedido['fecha_evento'] as string).slice(0, 10) < fechaMinimaEvento(ahora)) {
@@ -108,6 +115,7 @@ export async function crearPedido(db: Db, body: unknown, opciones: {estado?: Est
         }
         pedido['total'] = total;
         await insertPreparedRow(client, pedidos, pedido);
+        if (invitado) await insertPreparedRow(client, pedidoInvitados, invitado);
         for (const linea of lineas) {
             await insertPreparedRow(client, pedidoPlatos, await prepareEntityWrite(pedidoPlatos, {pedido: pedido['id'], ...linea}, 'create'));
         }
@@ -140,6 +148,20 @@ export async function cargarPedidosEjemplo(db: Db, file: string): Promise<number
     const ejemplos = JSON.parse(await readFile(file, 'utf8')) as {estado: EstadoPedido}[];
     for (const {estado, ...pedido} of ejemplos) await crearPedido(db, pedido, {estado, ahora: null});
     return ejemplos.length;
+}
+
+// The example stock enters as one Ajuste, since an ingredient's stock is the sum of its movements.
+export async function cargarStockInicial(db: Db, file: string): Promise<number> {
+    const stock = JSON.parse(await readFile(file, 'utf8')) as Record<string, number>;
+    const movimiento = await prepareEntityWrite(movimientos, {fecha: localDateTime(), tipo: 'Ajuste', pedido: null,
+        facturado: null, anula: null, observaciones: 'Stock inicial de ejemplo'}, 'create');
+    const filas = await Promise.all(Object.entries(stock).map(([cod_ing, cantidad]) =>
+        prepareEntityWrite(movimientoIngredientes, {movimiento: movimiento['id'], cod_ing, cantidad}, 'create')));
+    await enTransaccion(db, async client => {
+        await insertPreparedRow(client, movimientos, movimiento);
+        for (const fila of filas) await insertPreparedRow(client, movimientoIngredientes, fila);
+    });
+    return filas.length;
 }
 
 function readId(value: unknown, error = 'El pedido no existe.'): string {
@@ -191,6 +213,7 @@ export function registerCateringApi(app: Express, pool: Db, auth: Authentication
         }
         const result = await crearPedido(pool, req.body, customer ? {clienteId: customer.id} : {});
         publish('pedidos');
+        if (!customer) publish('pedido_invitados');
         publish('pedido_platos');
         res.status(201).json(result);
     });
@@ -203,9 +226,10 @@ export function registerCateringApi(app: Express, pool: Db, auth: Authentication
     pub.get('/mis-pedidos/:id', customerAuth.requireCustomer, async (req, res) => {
         const customer = customerPrincipal(res);
         const id = readId(req.params['id']);
-        const {rows} = await pool.query<PedidoRepeticion>(`SELECT cliente_nombre, cliente_email, cliente_telefono, direccion,
-                personas, observaciones, cod_servicio
-            FROM ${T.pedidos} WHERE id = $1 AND cliente_id = $2`, [id, customer.id]);
+        const {rows} = await pool.query<PedidoRepeticion>(`SELECT c.nombre || ' ' || c.apellido AS cliente_nombre,
+                c.email AS cliente_email, p.cliente_telefono, p.direccion, p.personas, p.observaciones, p.cod_servicio
+            FROM ${T.pedidos} p JOIN ${T.clientes} c ON c.id = p.cliente_id
+            WHERE p.id = $1 AND p.cliente_id = $2`, [id, customer.id]);
         const pedido = rows[0];
         if (!pedido) throw new ApiFailure(404, 'El pedido no existe.');
         const platos = await pool.query<PedidoRepeticion['platos'][number]>(
@@ -215,8 +239,11 @@ export function registerCateringApi(app: Express, pool: Db, auth: Authentication
     pub.post('/mis-pedidos/:id', customerAuth.requireCustomer, async (req, res) => {
         const customer = customerPrincipal(res);
         const id = readId(req.params['id']);
-        const {rowCount} = await pool.query(`UPDATE ${T.pedidos} SET cliente_id = $1
-            WHERE id = $2 AND LOWER(cliente_email) = LOWER($3) AND (cliente_id IS NULL OR cliente_id = $1)`,
+        // A guest order with the account's email moves to the account; its guest row is removed.
+        const {rowCount} = await pool.query(`WITH invitado AS (
+                DELETE FROM ${T.pedido_invitados} WHERE pedido = $2 AND LOWER(email) = LOWER($3) RETURNING pedido)
+            UPDATE ${T.pedidos} SET cliente_id = $1
+            WHERE id = $2 AND (id IN (SELECT pedido FROM invitado) OR cliente_id = $1)`,
         [customer.id, id, customer.email]);
         res.json({associated: rowCount === 1} satisfies PedidoLinkResponse);
     });

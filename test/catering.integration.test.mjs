@@ -5,7 +5,7 @@ import {withTestDatabase} from './helpers/database.mjs';
 import {initializeUsers} from '../dist/backend/bootstrap.js';
 import {createAuthentication} from '../dist/backend/auth.js';
 import {createCustomerAuthentication, registerCustomerAuthApi} from '../dist/backend/customer-auth.js';
-import {cargarPedidosEjemplo, crearPedido, registerCateringApi} from '../dist/backend/catering.js';
+import {cargarPedidosEjemplo, cargarStockInicial, crearPedido, registerCateringApi} from '../dist/backend/catering.js';
 import {registerEntityApi} from '../dist/backend/api.js';
 import {exportarTablas} from '../dist/backend/exportar.js';
 import {inflateRawSync} from 'node:zlib';
@@ -16,7 +16,7 @@ const cliente = {cliente_nombre: 'Ana', cliente_email: 'ana@example.com', client
 
 // Bread: 1000 g of flour and 5 g of salt make 10 portions; four orders in different states.
 async function fixture(pool) {
-    await pool.query(`INSERT INTO ssot.ingredientes (cod_ing, nombre, unidad, stock_actual) VALUES ('HAR', 'Harina', 'g', 1000), ('SAL', 'Sal', 'g', 100)`);
+    await pool.query(`INSERT INTO ssot.ingredientes (cod_ing, nombre, unidad) VALUES ('HAR', 'Harina', 'g'), ('SAL', 'Sal', 'g')`);
     await pool.query(`INSERT INTO ssot.platos (cod_plato, nombre, descripcion, categoria, porciones_receta, precio_porcion, activo)
         VALUES ('PAN', 'Pan', NULL, 'Entrada', 10, 100, true), ('OFF', 'Fuera de carta', NULL, 'Postre', 1, 999, false)`);
     await pool.query(`INSERT INTO ssot.recetas (cod_plato, cod_ing, cantidad) VALUES ('PAN', 'HAR', 1000), ('PAN', 'SAL', 5), ('OFF', 'HAR', 1)`);
@@ -57,7 +57,10 @@ test('tables export to an Excel workbook with names instead of codes and without
         assert.match(recetas, /<row r="1"><c r="A1" t="inlineStr" s="1"><is><t xml:space="preserve">Plato<\/t>/);
         assert.match(recetas, /<t xml:space="preserve">Pan<\/t><\/is><\/c><c r="B\d" t="inlineStr"><is><t xml:space="preserve">Harina<\/t><\/is><\/c><c r="C\d"><v>1000<\/v>/);
         assert.doesNotMatch(files['xl/worksheets/sheet2.xml'], /ana@example\.com|Calle 1/);
-        assert.match(unzip(await exportarTablas(pool, ['pedidos'], {contacto: true}))['xl/worksheets/sheet1.xml'], /ana@example\.com/);
+        assert.doesNotMatch(unzip(await exportarTablas(pool, ['pedido_invitados']))['xl/worksheets/sheet1.xml'], /ana@example\.com/);
+        const conContacto = unzip(await exportarTablas(pool, ['pedidos', 'pedido_invitados'], {contacto: true}));
+        assert.match(conContacto['xl/worksheets/sheet1.xml'], /Calle 1/);
+        assert.match(conContacto['xl/worksheets/sheet2.xml'], /ana@example\.com/);
         // The sheet's own filters apply across every page.
         const filtrada = unzip(await exportarTablas(pool, ['recetas'], {consulta: {where: {cod_plato: 'OFF'}, sort: 'cod_ing', direction: 'desc'}}));
         assert.equal([...filtrada['xl/worksheets/sheet1.xml'].matchAll(/<row /g)].length, 2);
@@ -68,10 +71,14 @@ test('tables export to an Excel workbook with names instead of codes and without
 });
 
 
-test('the example orders load through the public order logic', async () => {
+test('the example orders and stock load through the public order logic and the stock ledger', async () => {
     await withTestDatabase(async ({pool}) => {
         await loadTabData(pool, 'examples/data');
         assert.equal(await cargarPedidosEjemplo(pool, 'examples/data/pedidos.json'), 5);
+        assert.equal((await pool.query('SELECT count(*)::int AS n FROM ssot.pedido_invitados')).rows[0].n, 5);
+        assert.equal(await cargarStockInicial(pool, 'examples/data/stock-inicial.json'), 13);
+        assert.deepEqual((await pool.query(`SELECT sum(cantidad)::int AS stock FROM ssot.movimiento_ingredientes WHERE cod_ing = 'HUE'`)).rows,
+            [{stock: 30}]);
     });
 });
 
@@ -109,6 +116,8 @@ test('the public API validates orders against the SSOT and business rules and ne
         const pedidoAnonimo = (await anonimo.json()).id;
         assert.deepEqual((await pool.query('SELECT cliente_id FROM ssot.pedidos WHERE id = $1', [pedidoAnonimo])).rows,
             [{cliente_id: null}]);
+        assert.deepEqual((await pool.query('SELECT nombre, email FROM ssot.pedido_invitados WHERE pedido = $1', [pedidoAnonimo])).rows,
+            [{nombre: 'Ana', email: 'ana@example.com'}]);
         const registered = await request('/api/public/auth/register', {
             email: 'ANA@example.com', nombre: 'Ana', apellido: 'Pérez', contrasena: 'customer-test-password',
         });
@@ -124,16 +133,18 @@ test('the public API validates orders against the SSOT and business rules and ne
         assert.deepEqual((await historial.json()).map(pedido => pedido.id), [pedidoAnonimo]);
         assert.deepEqual((await pool.query('SELECT cliente_id FROM ssot.pedidos WHERE id = $1', [pedidoAnonimo])).rows,
             [{cliente_id: customer.id}]);
+        // Linked to the account, the order's name and email come from clientes only.
+        assert.deepEqual((await pool.query('SELECT * FROM ssot.pedido_invitados WHERE pedido = $1', [pedidoAnonimo])).rows, []);
         const detallePedido = await request(`/api/public/mis-pedidos/${pedidoAnonimo}`, undefined, customerToken);
         assert.deepEqual(await detallePedido.json(), {
-            cliente_nombre: 'Ana', cliente_email: 'ana@example.com', cliente_telefono: '1', direccion: 'Calle 1',
+            cliente_nombre: 'Ana Pérez', cliente_email: 'ana@example.com', cliente_telefono: '1', direccion: 'Calle 1',
             personas: 10, observaciones: null, cod_servicio: 'S', platos: [{cod_plato: 'PAN', porciones: 20}],
         });
         await pool.query('UPDATE ssot.pedidos SET cliente_id = $1 WHERE id = ANY($2::text[])',
             [customer.id, [fixtureIds.A, fixtureIds.P]]);
         assert.equal((await request(`/api/public/mis-pedidos/${fixtureIds.P}`, undefined, undefined, 'DELETE')).status, 401);
         assert.equal((await request(`/api/public/mis-pedidos/${fixtureIds.C}`, undefined, customerToken)).status, 404);
-        assert.equal((await request(`/api/public/mis-pedidos/${fixtureIds.A}`, undefined, customerToken)).status, 409);
+        assert.equal((await request(`/api/public/mis-pedidos/${fixtureIds.A}`, undefined, customerToken)).status, 200);
         assert.equal((await request(`/api/public/mis-pedidos/${fixtureIds.P}`, undefined, customerToken, 'DELETE')).status, 200);
         assert.equal((await pool.query('SELECT estado FROM ssot.pedidos WHERE id = $1', [fixtureIds.P])).rows[0].estado, 'Cancelado');
         assert.equal((await request(`/api/public/mis-pedidos/${fixtureIds.A}`, undefined, customerToken, 'DELETE')).status, 409);
@@ -193,11 +204,12 @@ test('the public API validates orders against the SSOT and business rules and ne
         assert.deepEqual(published, ['pedidos', 'pedido_platos']);
         assert.deepEqual((await pool.query('SELECT estado, cod_servicio, total, cliente_id FROM ssot.pedidos WHERE id = $1', [id])).rows,
             [{estado: 'Pendiente', cod_servicio: 'S', total: 5000, cliente_id: customer.id}]);
+        assert.deepEqual((await pool.query('SELECT * FROM ssot.pedido_invitados WHERE pedido = $1', [id])).rows, []);
         assert.deepEqual((await pool.query('SELECT cod_plato, porciones, precio_porcion FROM ssot.pedido_platos WHERE pedido = $1', [id])).rows,
             [{cod_plato: 'PAN', porciones: 20, precio_porcion: 100}]);
         const repeticion = await request(`/api/public/mis-pedidos/${id}`, undefined, customerToken);
         assert.deepEqual((await repeticion.json()).platos, [{cod_plato: 'PAN', porciones: 20}]);
-        const carta = await request('/api/public/pedidos', {...cliente, fecha_evento: enDias(5), personas: 3, platos: [{cod_plato: 'PAN', porciones: 7}]}, customerToken);
+        const carta = await request('/api/public/pedidos', {...cliente, cliente_nombre: 'Ana Pérez', fecha_evento: enDias(5), personas: 3, platos: [{cod_plato: 'PAN', porciones: 7}]}, customerToken);
         assert.equal((await carta.json()).total, 700);
         published.length = 0;
         const cancelado = await request(`/api/public/mis-pedidos/${id}`, undefined, customerToken, 'DELETE');
@@ -222,10 +234,10 @@ test('the public API validates orders against the SSOT and business rules and ne
         for (const path of ['/api/catering/pedidos', `/api/catering/pedidos/${id}/compras`, '/api/catering/estadisticas', '/api/catering/inventario']) {
             assert.equal((await request(path, undefined, token)).status, 404, path);
         }
-        // The stock history stays read-only in the generic sheets.
+        // Stock movements are entered in the generic sheets, since they are the only record of stock.
         const send = (path, method, body) => fetch(`${base}/api/entities/${path}`, {method,
             headers: {'Content-Type': 'application/json', Authorization: `Bearer ${token}`}, body: JSON.stringify(body)});
-        assert.equal((await send('movimientos', 'POST', {fecha: '2026-11-01T10:00', tipo: 'Ingreso', pedido: null, facturado: null, anula: null, observaciones: null})).status, 405);
-        assert.equal((await (await fetch(`${base}/api/entities/movimientos`, {headers: {Authorization: `Bearer ${token}`}})).json()).readOnly, true);
+        assert.equal((await send('movimientos', 'POST', {fecha: '2026-11-01T10:00', tipo: 'Ingreso', pedido: null, facturado: null, anula: null, observaciones: null})).status, 204);
+        assert.equal((await (await fetch(`${base}/api/entities/movimientos`, {headers: {Authorization: `Bearer ${token}`}})).json()).readOnly, false);
     });
 });

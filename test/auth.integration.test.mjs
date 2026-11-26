@@ -64,7 +64,7 @@ test('PostgreSQL: order FKs accept existing services and null, and reject missin
     const send = (entity, method, body) => request(`/api/entities/${entity}`, method, body, token);
     const service = {cod_servicio: 'CENA', nombre: 'Cena', descripcion: null, precio_persona: 100, min_personas: 1, activo: true};
     assert.equal((await send('servicios', 'POST', service)).status, 204);
-    const row = {cliente_nombre: 'Con servicio', cliente_email: 'a@example.com', cliente_telefono: '1', direccion: 'Calle 1',
+    const row = {cliente_telefono: '1', direccion: 'Calle 1',
         fecha_evento: '2026-11-12T20:00', personas: 10, estado: 'Pendiente', cod_servicio: 'CENA', total: 1000, observaciones: null};
     assert.equal((await send('pedidos', 'POST', row)).status, 204);
     const metadata = await (await send('pedidos', 'GET')).json();
@@ -73,14 +73,14 @@ test('PostgreSQL: order FKs accept existing services and null, and reject missin
     const serviceVersion = versionOf(await (await send('servicios', 'GET')).json(), {cod_servicio: 'CENA'});
     assert.deepEqual(metadata.foreignKeys.find(fk => fk.name === 'servicio'), {name: 'servicio', entity: 'servicios', fields: {cod_servicio: 'cod_servicio'}, displayFields: ['cod_servicio', 'nombre']});
     for (const response of [
-        await send('pedidos', 'POST', {...row, cliente_nombre: 'Servicio inexistente', cod_servicio: 'MISSING'}),
+        await send('pedidos', 'POST', {...row, cod_servicio: 'MISSING'}),
         await send('pedidos', 'PUT', {key, row: {...row, cod_servicio: 'MISSING'}, version}),
         await send('servicios', 'DELETE', {cod_servicio: 'CENA'}),
         await send('servicios', 'PUT', {key: {cod_servicio: 'CENA'}, row: {...service, cod_servicio: 'OTRO'}, version: serviceVersion}),
     ]) assert.equal(response.status, 409, await response.text());
     assert.equal((await send('servicios', 'PUT', {key: {cod_servicio: 'CENA'}, row: {...service, nombre: 'Cena actualizada'}, version: serviceVersion})).status, 204);
     assert.equal((await send('pedidos', 'PUT', {key, row: {...row, cod_servicio: null}, version})).status, 204);
-    assert.equal((await send('pedidos', 'POST', {...row, cliente_nombre: 'Sin servicio', cod_servicio: null})).status, 204);
+    assert.equal((await send('pedidos', 'POST', {...row, cod_servicio: null})).status, 204);
     assert.equal((await send('servicios', 'DELETE', {cod_servicio: 'CENA'})).status, 204);
 });
 

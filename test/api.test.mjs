@@ -110,8 +110,8 @@ test('empty entities still return their columns', async t => {
     const body = await response.json();
     assert.equal(body.name, 'ingredientes');
     assert.deepEqual(body.rows, []);
-    assert.deepEqual(body.columns.map(column => column.name), ['cod_ing', 'nombre', 'unidad', 'stock_actual', 'unidad_compra']);
-    assert.equal(body.columns[3].type, 'cantidad');
+    assert.deepEqual(body.columns.map(column => column.name), ['cod_ing', 'nombre', 'unidad', 'unidad_compra']);
+    assert.equal(body.columns[2].type, 'unidad');
 });
 
 test('database errors and rows inconsistent with the SSOT return a JSON error', async t => {
@@ -228,14 +228,14 @@ test('valid enums, positive boundary and nullable description retain their value
 test('CRUD uses parameters and targets the original key when the key is edited', async t => {
     const queries = [];
     const base = await startApi(t, async (sql, values) => { queries.push({sql, values}); return {rowCount: 1}; });
-    const row = {cod_ing: '', nombre: "O'Reilly <script>", unidad: 'g', stock_actual: 0, unidad_compra: null};
+    const row = {cod_ing: '', nombre: "O'Reilly <script>", unidad: 'g', unidad_compra: null};
     assert.equal((await send(base, 'ingredientes', 'POST', row)).status, 204);
     assert.match(queries[0].sql, /^INSERT INTO "ssot"\."ingredientes"/);
-    assert.deepEqual(queries[0].values, ['', row.nombre, 'g', 0, null]);
+    assert.deepEqual(queries[0].values, ['', row.nombre, 'g', null]);
     assert.ok(!queries[0].sql.includes(row.nombre));
-    assert.equal((await send(base, 'ingredientes', 'PUT', {key: {cod_ing: ''}, version: '1', row: {...row, cod_ing: 'RENAMED', nombre: 'Renamed', stock_actual: 5}})).status, 204);
-    assert.match(queries[1].sql, /WHERE "cod_ing" = \$6 AND xmin::text = \$7$/);
-    assert.deepEqual(queries[1].values, ['RENAMED', 'Renamed', 'g', 5, null, '', '1']);
+    assert.equal((await send(base, 'ingredientes', 'PUT', {key: {cod_ing: ''}, version: '1', row: {...row, cod_ing: 'RENAMED', nombre: 'Renamed'}})).status, 204);
+    assert.match(queries[1].sql, /WHERE "cod_ing" = \$5 AND xmin::text = \$6$/);
+    assert.deepEqual(queries[1].values, ['RENAMED', 'Renamed', 'g', null, '', '1']);
     assert.equal((await send(base, 'recetas', 'DELETE', {cod_plato: 'EMP', cod_ing: 'RENAMED'})).status, 204);
     assert.match(queries[2].sql, /^DELETE FROM "ssot"\."recetas" WHERE "cod_plato" = \$1 AND "cod_ing" = \$2$/);
     assert.deepEqual(queries[2].values, ['EMP', 'RENAMED']);
@@ -247,13 +247,17 @@ test('CRUD uses parameters and targets the original key when the key is edited',
 test('invalid shapes, types, keys and SSOT business rules fail before querying', async t => {
     let calls = 0;
     const base = await startApi(t, async () => { calls++; return {rowCount: 1}; });
-    const order = {cliente_nombre: 'Ana', cliente_email: 'ana@example.com', cliente_telefono: '1', direccion: 'Calle 1',
+    const order = {cliente_telefono: '1', direccion: 'Calle 1',
         fecha_evento: '2026-11-12T20:00', personas: 10, estado: 'Pendiente', cod_servicio: null, total: 1000, observaciones: null};
-    for (const body of [null, [], {}, {...order, cliente_nombre: null}, {...order, personas: '10'}, {...order, estado: 'Listo'},
-        {...order, fecha_evento: '2026-13-01T20:00'}, {...order, extra: true}, {...order, id: 'chosen'}, {...order, cliente_email: 'sin-arroba'}]) {
+    for (const body of [null, [], {}, {...order, direccion: null}, {...order, personas: '10'}, {...order, estado: 'Listo'},
+        {...order, fecha_evento: '2026-13-01T20:00'}, {...order, extra: true}, {...order, id: 'chosen'}]) {
         const response = await send(base, 'pedidos', 'POST', body);
         assert.equal(response.status, 400);
         assert.equal(typeof (await response.json()).error, 'string');
+    }
+    const guest = {pedido: 'p1', nombre: 'Ana', email: 'ana@example.com'};
+    for (const body of [{...guest, nombre: null}, {...guest, email: 'sin-arroba'}]) {
+        assert.equal((await send(base, 'pedido_invitados', 'POST', body)).status, 400);
     }
     const row = {cod_plato: 'EMP', cod_ing: 'HAR', cantidad: 1};
     for (const key of [{}, {cod_plato: null, cod_ing: 'HAR'}, {cod_plato: 'EMP'}, {cod_plato: 'EMP', cod_ing: 'HAR', extra: true}]) {
@@ -270,7 +274,7 @@ test('missing rows and constraint conflicts have useful, non-sensitive errors', 
         if (sql.startsWith('INSERT')) throw Object.assign(new Error('Internal query and credentials'), {code: '23505'});
         return {rowCount: 0};
     });
-    const row = {cod_ing: 'B', nombre: 'B', unidad: 'g', stock_actual: 0, unidad_compra: null};
+    const row = {cod_ing: 'B', nombre: 'B', unidad: 'g', unidad_compra: null};
     assert.equal((await send(base, 'ingredientes', 'PUT', {key: {cod_ing: 'A'}, version: '1', row})).status, 409);
     assert.equal((await send(base, 'ingredientes', 'DELETE', {cod_ing: 'A'})).status, 404);
     const conflict = await send(base, 'ingredientes', 'POST', row);

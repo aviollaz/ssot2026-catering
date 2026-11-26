@@ -72,7 +72,7 @@ test('CSV imports use real transactions, SSOT constraints and authenticated API 
             // Catering's entity validators are on orders and stock movements, whose generated ids keep them out of CSV
             // imports, so this step checks an SSOT value constraint instead.
             await t.test('composite keys, foreign keys and value constraints follow the SSOT', async () => {
-                await pool.query("INSERT INTO ssot.ingredientes (cod_ing, nombre, unidad, stock_actual) VALUES ('HAR', 'Harina', 'g', 1000)");
+                await pool.query("INSERT INTO ssot.ingredientes (cod_ing, nombre, unidad) VALUES ('HAR', 'Harina', 'g')");
                 const headers = parseCsv(await (await request('/recetas/csv')).text())[0];
                 assert.deepEqual(headers, ['Plato', 'Ingrediente', 'Cantidad por receta']);
                 assert.deepEqual(await (await request('/recetas/csv', stringifyCsv([headers, ['empty', 'HAR', 500]]))).json(), {inserted: 1, unchanged: 0});
