@@ -23,8 +23,8 @@ test('removing a join removes only its descendants and reindexes surviving branc
 
 test('self-joins distinguish two roles and never expose unreadable keys through metadata', async () => {
     await withTestDatabase(async ({pool, handle}) => {
-        const base = completeEntity(myContext, myEntities.planes);
-        const integer = (name, nullable = false) => ({...base.fields.plan, name, label: name, nullable});
+        const base = completeEntity(myContext, myEntities.platos);
+        const integer = (name, nullable = false) => ({...base.fields.porciones_receta, name, label: name, nullable});
         const people = {...base, name: 'people', pk: ['id'], fields: {
             id: {...integer('id'), visible: false}, manager: integer('manager', true), mentor: integer('mentor', true),
             name: {...base.fields.descripcion, name: 'name', label: 'Name'},
@@ -60,12 +60,12 @@ test('self-joins distinguish two roles and never expose unreadable keys through 
 });
 
 test('report metadata follows field types and visibility in an arbitrary domain', () => {
-    const base = completeEntity(myContext, myEntities.planes);
+    const base = completeEntity(myContext, myEntities.platos);
     const entity = {...base, name: 'inventory', fields: {
         warehouse: {...base.fields.descripcion, name: 'warehouse', label: 'Warehouse'},
-        stock: {...base.fields.plan, name: 'stock', label: 'Stock'},
-        secret: {...base.fields.plan, name: 'secret', readable: false},
-        internal: {...base.fields.plan, name: 'internal', visible: false},
+        stock: {...base.fields.porciones_receta, name: 'stock', label: 'Stock'},
+        secret: {...base.fields.porciones_receta, name: 'secret', readable: false},
+        internal: {...base.fields.porciones_receta, name: 'internal', visible: false},
     }};
     const metadata = reportDefinition(entity, createReportCatalog(new Map([[entity.name, entity]]), {inventory: 'Inventory'}));
     assert.equal(metadata.name, 'inventory');
@@ -77,8 +77,11 @@ test('report metadata follows field types and visibility in an arbitrary domain'
 test('reports authenticate, validate SSOT capabilities and paginate grouped PostgreSQL results', {timeout: 60000}, async t => {
     await withTestDatabase(async ({pool}) => {
         await initializeUsers(pool, {username: 'reader', password: 'report-test-password'});
-        await pool.query(`INSERT INTO ssot.planes (plan, descripcion)
-            SELECT i, CASE WHEN i = 25 THEN NULL ELSE 'Group ' || lpad((i % 12)::text, 2, '0') END FROM generate_series(1,25) i`);
+        // Dishes for the root reports, and recipes linking A and B to ingredients I1 and I2 for the joins; C and I3 stay unmatched.
+        const dishes = (codes, description = "'Plato'") => `INSERT INTO ssot.platos (cod_plato, nombre, descripcion, categoria, porciones_receta, precio_porcion, activo)
+            SELECT code, 'Plato', ${description}, 'Finger food', n, 900, true FROM ${codes}`;
+        await pool.query(dishes("generate_series(1,25) n, lpad(n::text, 2, '0') code",
+            "CASE WHEN n = 25 THEN NULL ELSE 'Group ' || lpad((n % 12)::text, 2, '0') END"));
         const app = express(), auth = createAuthentication(pool, 'report-test-secret-with-at-least-32-bytes');
         registerAuthApi(app, pool, auth);
         registerEntityApi(app, pool, auth);
@@ -92,7 +95,7 @@ test('reports authenticate, validate SSOT capabilities and paginate grouped Post
             ...(body === undefined ? {} : {body: JSON.stringify(body)}),
         });
         const report = async body => {
-            const result = await request('planes', body);
+            const result = await request('platos', body);
             assert.equal(result.status, 200, await result.clone().text());
             return result.json();
         };
@@ -109,15 +112,15 @@ test('reports authenticate, validate SSOT capabilities and paginate grouped Post
         };
         try {
             await t.test('metadata exposes only readable visible fields and valid aggregates', async () => {
-                assert.equal((await request('planes', undefined, false)).status, 401);
-                assert.equal((await request('planes', {groupBy: [], measures: [{operation: 'count'}]}, false)).status, 401);
+                assert.equal((await request('platos', undefined, false)).status, 401);
+                assert.equal((await request('platos', {groupBy: [], measures: [{operation: 'count'}]}, false)).status, 401);
                 const users = await (await request('usuarios')).json();
                 assert.deepEqual(users.columns.map(column => column.name), ['usuario']);
-                const subjects = await (await request('materias')).json();
-                assert.deepEqual(subjects.columns.find(column => column.name === 'obligatoria').aggregates.map(value => value.operation), ['count']);
+                const dishColumns = (await (await request('platos')).json()).columns;
+                assert.deepEqual(dishColumns.find(column => column.name === 'activo').aggregates.map(value => value.operation), ['count']);
             });
             await t.test('grouped pages have stable order, null groups and clamped page numbers', async () => {
-                const query = {groupBy: ['descripcion'], measures: [{operation: 'count'}, {operation: 'sum', field: 'plan'}]};
+                const query = {groupBy: ['descripcion'], measures: [{operation: 'count'}, {operation: 'sum', field: 'porciones_receta'}]};
                 const first = await report(query), last = await report({...query, page: 99});
                 assert.equal(first.total, 13);
                 assert.equal(first.rows.length, 10);
@@ -129,9 +132,9 @@ test('reports authenticate, validate SSOT capabilities and paginate grouped Post
             });
             await t.test('counts, averages and extrema preserve null and numeric semantics', async () => {
                 const result = await report({groupBy: [], measures: [{operation: 'count'}, {operation: 'count', field: 'descripcion'},
-                    {operation: 'avg', field: 'plan'}, {operation: 'min', field: 'plan'}, {operation: 'max', field: 'plan'}]});
+                    {operation: 'avg', field: 'porciones_receta'}, {operation: 'min', field: 'porciones_receta'}, {operation: 'max', field: 'porciones_receta'}]});
                 assert.deepEqual(result.rows[0], {m0: '25', m1: '24', m2: '13.0000000000000000', m3: '1', m4: '25'});
-                const empty = await report({groupBy: [], measures: [{operation: 'count'}, {operation: 'sum', field: 'plan'}], where: {plan: -1}});
+                const empty = await report({groupBy: [], measures: [{operation: 'count'}, {operation: 'sum', field: 'porciones_receta'}], where: {porciones_receta: 999}});
                 assert.deepEqual(empty.rows, [{m0: '0', m1: null}]);
                 assert.deepEqual((await report({groupBy: ['descripcion'], measures: [], where: {descripcion: null}})).rows, [{g0: null}]);
             });
@@ -141,50 +144,49 @@ test('reports authenticate, validate SSOT capabilities and paginate grouped Post
                 const literal = await report({groupBy: [], measures: [{operation: 'count'}], where: {descripcion: "' OR 1=1; --"}});
                 assert.deepEqual(literal.rows, [{m0: '0'}]);
             });
-            await t.test('SSOT paths support composite N:M joins, left joins and explicit distinct-record counts', async () => {
-                await pool.query("INSERT INTO ssot.departamentos (cod_dep, departamento) VALUES ('D1', 'First'), ('D2', 'Second')");
-                await pool.query("INSERT INTO ssot.materias (cod_mat, cod_dep, materia) VALUES ('M1', 'D1', 'First subject'), ('M1', 'D2', 'Second subject'), ('M2', 'D1', 'Empty subject')");
-                await pool.query("INSERT INTO ssot.estudiantes (legajo, nombre) VALUES ('A', 'Alice'), ('B', 'Bob'), ('C', 'Carol')");
-                await pool.query(`INSERT INTO ssot.enrolamientos (legajo, cod_mat, cod_dep, año, cuatrimestre, nota) VALUES
-                    ('A','M1','D1',2026,'1C',8), ('A','M1','D1',2026,'2C',10), ('B','M1','D1',2026,'1C',6), ('B','M1','D2',2026,'1C',4)`);
-                const root = await definition('estudiantes');
-                const first = {source: 0, relationship: root.sources[0].relationships.find(edge => edge.entity === 'enrolamientos').id, kind: 'inner'};
-                const middle = await definition('estudiantes', [first]);
-                const second = {source: 1, relationship: middle.sources[1].relationships.find(edge => edge.entity === 'materias').id, kind: 'inner'};
+            await t.test('SSOT paths support N:M joins, left joins and explicit distinct-record counts', async () => {
+                await pool.query('DELETE FROM ssot.platos');
+                await pool.query(dishes("unnest(ARRAY['A', 'B', 'C']) code, generate_series(1,1) n"));
+                await pool.query("INSERT INTO ssot.ingredientes (cod_ing, nombre, unidad, stock_actual) VALUES ('I1', 'First', 'g', 0), ('I2', 'Second', 'g', 0), ('I3', 'Unused', 'g', 0)");
+                await pool.query("INSERT INTO ssot.recetas (cod_plato, cod_ing, cantidad) VALUES ('A','I1',8), ('A','I2',10), ('B','I1',6), ('B','I2',4)");
+                const root = await definition('platos');
+                const first = {source: 0, relationship: root.sources[0].relationships.find(edge => edge.entity === 'recetas').id, kind: 'inner'};
+                const middle = await definition('platos', [first]);
+                const second = {source: 1, relationship: middle.sources[1].relationships.find(edge => edge.entity === 'ingredientes').id, kind: 'inner'};
                 const joins = [first, second];
                 const measures = [{operation: 'count'}, ...[0, 1, 2].map(source => ({operation: 'countDistinct', source})),
-                    {operation: 'avg', field: JSON.stringify([1, 'nota'])}];
-                assert.deepEqual((await joinedReport('estudiantes', {joins, groupBy: [], measures})).rows,
+                    {operation: 'avg', field: JSON.stringify([1, 'cantidad'])}];
+                assert.deepEqual((await joinedReport('platos', {joins, groupBy: [], measures})).rows,
                     [{m0: '4', m1: '2', m2: '4', m3: '2', m4: '7.0000000000000000'}]);
                 const left = joins.map(join => ({...join, kind: 'left'}));
-                const grouped = await joinedReport('estudiantes', {joins: left, groupBy: [JSON.stringify([0, 'legajo'])], measures});
+                const grouped = await joinedReport('platos', {joins: left, groupBy: [JSON.stringify([0, 'cod_plato'])], measures});
                 assert.deepEqual(grouped.rows, [
-                    {g0: 'A', m0: '2', m1: '1', m2: '2', m3: '1', m4: '9.0000000000000000'},
+                    {g0: 'A', m0: '2', m1: '1', m2: '2', m3: '2', m4: '9.0000000000000000'},
                     {g0: 'B', m0: '2', m1: '1', m2: '2', m3: '2', m4: '5.0000000000000000'},
                     {g0: 'C', m0: '1', m1: '1', m2: '0', m3: '0', m4: null},
                 ]);
-                const missing = await joinedReport('estudiantes', {joins: left, groupBy: [JSON.stringify([0, 'legajo'])], measures: [], where: {[JSON.stringify([1, 'legajo'])]: null}});
+                const missing = await joinedReport('platos', {joins: left, groupBy: [JSON.stringify([0, 'cod_plato'])], measures: [], where: {[JSON.stringify([1, 'cod_plato'])]: null}});
                 assert.deepEqual(missing.rows, [{g0: 'C'}]);
-                assert.equal((await joinedReport('estudiantes', {joins: [left[0], second], groupBy: [], measures: [{operation: 'count'}]})).rows[0].m0, '4');
-                const repeated = await joinedReport('estudiantes', {joins: [first, first], groupBy: [],
+                assert.equal((await joinedReport('platos', {joins: [left[0], second], groupBy: [], measures: [{operation: 'count'}]})).rows[0].m0, '4');
+                const repeated = await joinedReport('platos', {joins: [first, first], groupBy: [],
                     measures: [{operation: 'count'}, {operation: 'countDistinct', source: 0}]});
                 assert.deepEqual(repeated.rows, [{m0: '8', m1: '2'}]);
-                const independent = await joinedReport('estudiantes', {joins: [first, first], groupBy: [], measures: [{operation: 'count'}],
-                    where: {[JSON.stringify([1, 'cuatrimestre'])]: '2C', [JSON.stringify([2, 'cuatrimestre'])]: '1C'}});
+                const independent = await joinedReport('platos', {joins: [first, first], groupBy: [], measures: [{operation: 'count'}],
+                    where: {[JSON.stringify([1, 'cantidad'])]: 10, [JSON.stringify([2, 'cantidad'])]: 8}});
                 assert.deepEqual(independent.rows, [{m0: '1'}]);
                 // More root records prove grouped join pagination, including unmatched records.
-                await pool.query("INSERT INTO ssot.estudiantes (legajo, nombre) SELECT 'X' || n, 'Extra' FROM generate_series(1,12) n");
-                const last = await joinedReport('estudiantes', {joins: left, groupBy: [JSON.stringify([0, 'legajo'])], measures: [], page: 99});
+                await pool.query(dishes("generate_series(1,12) n, concat('X', n) code"));
+                const last = await joinedReport('platos', {joins: left, groupBy: [JSON.stringify([0, 'cod_plato'])], measures: [], page: 99});
                 assert.equal(last.total, 15);
                 assert.equal(last.page, 2);
                 assert.equal(last.rows.length, 5);
                 for (const invalidJoins of [null, [{...first, source: 1}], [{...first, source: -1}], [{...first, source: 0.5}],
-                    [{...first, kind: 'cross'}], [{...first, relationship: "'; DROP TABLE ssot.estudiantes; --"}], [{...first, on: '1=1'}]]) {
-                    assert.equal((await request('estudiantes', {joins: invalidJoins, groupBy: [], measures: [{operation: 'count'}]})).status, 400);
+                    [{...first, kind: 'cross'}], [{...first, relationship: "'; DROP TABLE ssot.platos; --"}], [{...first, on: '1=1'}]]) {
+                    assert.equal((await request('platos', {joins: invalidJoins, groupBy: [], measures: [{operation: 'count'}]})).status, 400);
                 }
                 for (const invalidMeasure of [{operation: 'countDistinct', source: 3}, {operation: 'countDistinct', source: -1},
-                    {operation: 'countDistinct', source: 0, field: 'legajo'}, {operation: 'sum', field: 'legajo', source: 0}]) {
-                    assert.equal((await request('estudiantes', {joins, groupBy: [], measures: [invalidMeasure]})).status, 400);
+                    {operation: 'countDistinct', source: 0, field: 'cod_plato'}, {operation: 'sum', field: 'cod_plato', source: 0}]) {
+                    assert.equal((await request('platos', {joins, groupBy: [], measures: [invalidMeasure]})).status, 400);
                 }
             });
             await t.test('unknown/private fields, unsupported operations and malformed requests are rejected', async () => {
