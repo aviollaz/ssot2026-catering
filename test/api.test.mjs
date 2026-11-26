@@ -4,11 +4,31 @@ import express from 'express';
 import {registerEntityApi} from '../dist/backend/api.js';
 import {myEntities, entityAreas, entityLabels} from '../dist/backend/system.js';
 import {browsing} from '../dist/backend/browsing.js';
+import {csvSettings} from '../dist/backend/csv-settings.js';
+import {entityReferences} from '../dist/backend/entity-relations.js';
 import {entityResult} from './helpers/entity-result.mjs';
 import {createAuthentication} from '../dist/backend/auth.js';
 import {appTypeBehaviours} from '../dist/backend/value-types.js';
 
 const tokens = new Map();
+
+test('relationship metadata preserves stored names and excludes unreadable keys and labels', () => {
+    const field = (name, extra = {}) => ({name, inputName: name, readable: true, writable: true, isName: false, ...extra});
+    const target = {name: 'warehouses', fields: {code: field('code'), title: field('title', {isName: true}), secret: field('secret', {isName: true, readable: false})}};
+    const source = {name: 'inventory', fields: {warehouse_code: field('warehouse_code', {inputName: 'warehouse'})},
+        fks: {location: {entity: target.name, fields: {warehouse_code: 'code'}}}};
+    const entities = new Map([[target.name, target], [source.name, source]]);
+    assert.deepEqual(entityReferences(source, entities, 'read'), [{name: 'location', entity: 'warehouses', fields: {warehouse_code: 'code'}, displayFields: ['code', 'title']}]);
+    assert.deepEqual(entityReferences(source, entities, 'write')[0].fields, {warehouse: 'code'});
+    source.fields.warehouse_code.writable = false;
+    assert.equal(entityReferences(source, entities, 'read').length, 1);
+    assert.deepEqual(entityReferences(source, entities, 'write'), []);
+    target.fields.code.readable = false;
+    assert.deepEqual(entityReferences(source, entities, 'read'), []);
+    target.fields.code.readable = true;
+    source.fields.warehouse_code.readable = false;
+    assert.deepEqual(entityReferences(source, entities, 'read'), []);
+});
 const fetch = (url, options = {}) => globalThis.fetch(url, {...options,
     headers: {...options.headers, Authorization: `Bearer ${tokens.get(new URL(url).origin)}`},
 });
@@ -54,6 +74,7 @@ test('entity data preserves JSON value types and exposes only display metadata',
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), {
         name: 'recetas',
+        csv: {export: true, import: true, maxBytes: csvSettings.maxBytes},
         label: 'Recetas', browsing, readOnly: false, window: {kind: 'complete'}, versions: ['1'],
         pk: ['cod_plato', 'cod_ing'],
         columns: [
@@ -70,6 +91,11 @@ test('entity data preserves JSON value types and exposes only display metadata',
             {name: 'plato', entity: 'platos', fields: {cod_plato: 'cod_plato'}, displayFields: ['cod_plato', 'nombre']},
             {name: 'ingrediente', entity: 'ingredientes', fields: {cod_ing: 'cod_ing'}, displayFields: ['cod_ing', 'nombre']},
         ],
+        references: [
+            {name: 'plato', entity: 'platos', fields: {cod_plato: 'cod_plato'}, displayFields: ['cod_plato', 'nombre']},
+            {name: 'ingrediente', entity: 'ingredientes', fields: {cod_ing: 'cod_ing'}, displayFields: ['cod_ing', 'nombre']},
+        ],
+        referencedBy: [],
         rows: [{cod_plato: 'EMP', cod_ing: 'HAR', cantidad: 500}],
     });
     assert.match(sql, /SELECT "cod_plato", "cod_ing", "cantidad"/);
@@ -252,6 +278,32 @@ test('missing rows and constraint conflicts have useful, non-sensitive errors', 
     assert.deepEqual(await conflict.json(), {error: 'Ya existe un registro con esa clave.'});
 });
 
+test('referenced key changes explain the dependent entity without exposing database details', async t => {
+    let referencingTable = 'recetas';
+    const base = await startApi(t, async () => {
+        throw Object.assign(new Error('Internal SQL and submitted values'), {
+            code: '23503', table: referencingTable, detail: 'Sensitive record contents',
+        });
+    });
+    const row = {cod_plato: 'EMPA', nombre: 'Empanadas', descripcion: null, categoria: 'Finger food', porciones_receta: 12, precio_porcion: 900, activo: true};
+    const update = {key: {cod_plato: 'EMP'}, row, version: '1'};
+    for (let attempt = 0; attempt < 2; attempt++) {
+        const response = await send(base, 'platos', 'PUT', update);
+        assert.equal(response.status, 409);
+        assert.deepEqual(await response.json(), {
+            error: 'No se puede cambiar la clave porque hay registros en Recetas que utilizan esta fila. Tu borrador se conserva; podés corregir la clave o cancelar los cambios.',
+        });
+    }
+    const unchangedKey = await send(base, 'platos', 'PUT', {...update, row: {...row, cod_plato: 'EMP'}});
+    assert.deepEqual(await unchangedKey.json(), {error: 'El registro tiene una referencia inválida o está siendo utilizado.'});
+    // An outgoing or unknown constraint must not be misreported as a dependent row.
+    for (referencingTable of ['platos', 'unknown']) {
+        const response = await send(base, 'platos', 'PUT', update);
+        assert.equal(response.status, 409);
+        assert.deepEqual(await response.json(), {error: 'El registro tiene una referencia inválida o está siendo utilizado.'});
+    }
+});
+
 test('delete dependency checks report every SSOT foreign key, including renamed fields', async t => {
     const queries = [];
     const base = await startApi(t, async (sql, values) => {
@@ -274,9 +326,9 @@ test('delete dependency checks report every SSOT foreign key, including renamed 
     });
     const recipe = queries.find(query => query.sql.includes('FROM "ssot"."recetas"'));
     assert.match(recipe.sql, /LIMIT 10/);
-    assert.match(recipe.sql, /SELECT DISTINCT dependent\."cod_plato", dependent\."cod_ing"/);
-    assert.doesNotMatch(recipe.sql, /SELECT DISTINCT dependent\.\*/);
-    assert.match(recipe.sql, /dependent\."cod_plato" = target\."cod_plato"/);
+    assert.match(recipe.sql, /SELECT DISTINCT "dependent"\."cod_plato", "dependent"\."cod_ing"/);
+    assert.doesNotMatch(recipe.sql, /SELECT DISTINCT "dependent"\.\*/);
+    assert.match(recipe.sql, /"dependent"\."cod_plato" = "target"\."cod_plato"/);
     assert.deepEqual(recipe.values, ['EMP']);
 
     const order = await fetch(`${base}/api/entities/pedidos/delete-check`, {
@@ -288,7 +340,7 @@ test('delete dependency checks report every SSOT foreign key, including renamed 
     assert.deepEqual(await order.json(), {
         blockers: [{entity: 'pedido_platos', relationship: 'pedido', count: 1, keys: [{pedido: 'p1', cod_plato: 'EMP'}]}],
     });
-    assert.match(queries.at(-1).sql, /dependent\."pedido" = target\."id"/);
+    assert.match(queries.at(-1).sql, /"dependent"\."pedido" = "target"\."id"/);
 });
 
 test('bulk delete rejects malformed and duplicate selections before querying', async t => {

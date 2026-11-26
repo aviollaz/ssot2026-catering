@@ -10,6 +10,7 @@ export type EntityKey = Record<string, NonNullable<FieldValue>>;
 export type EntityCreate = EntityRow;
 export type EntityInput = EntityRow;
 export type EntityUpdate = {key: EntityKey; row: EntityInput; version: string};
+export type CsvImportResponse = {inserted: number; unchanged: number};
 export type EntityNamesResponse = {name: EntityName; label: string; area: string}[];
 export type EntityQuery = {
     filter?: string; sort?: string; direction?: 'asc' | 'desc'; page?: number;
@@ -22,6 +23,7 @@ export type EntityForeignKey = {name: string; entity: EntityName; fields: Readon
 export type EntityResponse = {
     name: EntityName;
     label: string;
+    csv: {export: boolean; import: boolean; maxBytes: number};
     browsing: {clientRows: number; pageSize: number; bulkDeleteLimit: number};
     // Written only by the app's own endpoints; the sheet shows it without editing.
     readOnly: boolean;
@@ -29,6 +31,8 @@ export type EntityResponse = {
     columns: EntityColumn[];
     inputs: EntityInputColumn[];
     foreignKeys: EntityForeignKey[];
+    references: EntityForeignKey[];
+    referencedBy: (Omit<EntityForeignKey, 'displayFields'> & {label: string})[];
     rows: EntityRow[];
     versions: string[];
     window: EntityWindow;
@@ -41,3 +45,22 @@ export type LoginResponse = {token: string; expiresIn: number; user: Authenticat
 export type AuthenticatedCustomer = {id: string; email: string; nombre: string | null; apellido: string | null};
 export type CustomerLoginResponse = {token: string; expiresIn: number; customer: AuthenticatedCustomer};
 export type RecoveryCodesResponse = {codes: string[]};
+
+export type AggregateOperation = 'count' | 'sum' | 'avg' | 'min' | 'max';
+export type ReportMeasure = {operation: AggregateOperation; field: string} | {operation: 'count'} | {operation: 'countDistinct'; source: number};
+export type ReportJoin = {source: number; relationship: string; kind: 'inner' | 'left'};
+export type ReportSource = {
+    index: number; entity: EntityName; label: string; distinctRecords: boolean;
+    relationships: {id: string; entity: EntityName; label: string}[];
+};
+export type ReportDefinition = {
+    name: EntityName; label: string; pageSize: number;
+    rowCount: {operation: 'count'; label: string};
+    sources: ReportSource[];
+    columns: (EntityColumn & {aggregates: {operation: AggregateOperation; label: string}[]})[];
+};
+export type ReportQuery = Pick<EntityQuery, 'filter' | 'where' | 'page'> & {joins?: ReportJoin[]; groupBy: string[]; measures: ReportMeasure[]};
+export type ReportResponse = {
+    columns: {name: string; label: string}[]; rows: EntityRow[];
+    page: number; total: number; pageSize: number;
+};

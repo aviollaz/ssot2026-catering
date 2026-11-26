@@ -7,15 +7,16 @@ import {myContext, myEntities} from './system.js';
 import {ApiFailure, apiErrorHandler, readObject} from './api-errors.js';
 import {authenticationLimit} from './auth.js';
 import {entitySql} from './entity-sql.js';
+import {sql, querySql} from './sql.js';
 import {insertPreparedRow, prepareEntityWrite} from './entity-write.js';
 import {readPassword, verifyPassword} from './credentials.js';
 import type {CustomerLoginResponse, StoredRow} from './api-contract.js';
 
 const entity = completeEntity(myContext, myEntities.clientes);
-const sql = entitySql('clientes');
-const column = sql.column;
-const session = sql.select('id', 'email', 'nombre', 'apellido', 'version_sesion');
-const credentials = sql.select(...session.fields, 'contrasena_hash');
+const clientes = entitySql('clientes');
+const column = clientes.column;
+const session = clientes.select('id', 'email', 'nombre', 'apellido', 'version_sesion');
+const credentials = clientes.select(...session.fields, 'contrasena_hash');
 type CustomerSession = Pick<StoredRow<'clientes'>, typeof session.fields[number]>;
 export type AuthenticatedCustomer = {id: string; email: string; nombre: string | null; apellido: string | null};
 const publicCustomer = ({id, email, nombre, apellido}: AuthenticatedCustomer): AuthenticatedCustomer => ({id, email, nombre, apellido});
@@ -72,7 +73,7 @@ export function createCustomerAuthentication(pool: Pick<Pool, 'query'>, secret =
         } catch {
             throw new ApiFailure(401, 'La sesión venció o no es válida.');
         }
-        const {rows} = await session.query(pool, `WHERE ${column('id')} = $1`, [identity.id]);
+        const {rows} = await session.query(pool, sql`WHERE ${column('id')} = ${identity.id}`);
         const customer = rows[0];
         if (!customer || customer.version_sesion !== identity.version) throw new ApiFailure(401, 'La sesión venció o no es válida.');
         res.locals['customer'] = publicCustomer(customer);
@@ -120,7 +121,7 @@ export function registerCustomerAuthApi(app: Express, pool: Pick<Pool, 'query'>,
             if (!(error instanceof ApiFailure)) throw error;
             throw new ApiFailure(401, 'No existe una cuenta con esas credenciales.');
         }
-        const {rows} = await credentials.query(pool, `WHERE ${column('email')} = $1`, [email]);
+        const {rows} = await credentials.query(pool, sql`WHERE ${column('email')} = ${email}`);
         const customer = rows[0];
         const verified = await verifyPassword(password, customer?.contrasena_hash);
         if (!verified || !customer) throw new ApiFailure(401, 'No existe una cuenta con esas credenciales.');
@@ -132,15 +133,14 @@ export function registerCustomerAuthApi(app: Express, pool: Pick<Pool, 'query'>,
         const customer = customerPrincipal(res);
         const body = readObject(req.body, ['nombre', 'apellido']);
         const nombre = readName(body['nombre'], 'nombre'), apellido = readName(body['apellido'], 'apellido');
-        const result = await pool.query(`UPDATE ${sql.table} SET ${column('nombre')} = $1, ${column('apellido')} = $2
-            WHERE ${column('id')} = $3 AND (${column('nombre')} IS NULL OR ${column('apellido')} IS NULL)
-            RETURNING ${column('id')}`, [nombre, apellido, customer.id]);
+        const result = await querySql(pool, sql`UPDATE ${clientes.table} SET ${column('nombre')} = ${nombre}, ${column('apellido')} = ${apellido}
+            WHERE ${column('id')} = ${customer.id} AND (${column('nombre')} IS NULL OR ${column('apellido')} IS NULL)
+            RETURNING ${column('id')}`);
         if (!result.rowCount) throw new ApiFailure(409, 'El perfil ya tiene nombre y apellido. Actualizá la página para continuar.');
         res.json({...customer, nombre, apellido});
     });
     router.post('/logout', auth.requireCustomer, async (_req, res) => {
-        await pool.query(`UPDATE ${sql.table} SET ${column('version_sesion')} = $1 WHERE ${column('id')} = $2`,
-            [randomUUID(), customerPrincipal(res).id]);
+        await querySql(pool, sql`UPDATE ${clientes.table} SET ${column('version_sesion')} = ${randomUUID()} WHERE ${column('id')} = ${customerPrincipal(res).id}`);
         res.sendStatus(204);
     });
     router.use((_req, res) => { res.status(404).json({error: 'Operación desconocida.'}); });

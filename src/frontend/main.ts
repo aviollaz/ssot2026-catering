@@ -3,15 +3,18 @@ import {ApiRequestError, checkDeleteDependencies, createRow, deleteRows, isAuthe
 import {createEntityCache} from './entity-cache.js';
 import {entityPage} from './entity-query.js';
 import {editColumnFilters} from './column-filters.js';
+import {createCsvActions} from './csv-actions.js';
 import {element} from './dom.js';
 import {actionButton, setActionLabel} from './action-button.js';
 import {createTableNavigation} from './table-navigation.js';
 import {reviewRow} from './review-row.js';
 import {relatedRows} from './related-rows.js';
+import {reportsPage} from './reports.js';
 import {initializeAuthentication} from './auth-ui.js';
-import {loadReferenceSources, type LoadedReferenceSource} from './reference-sources.js';
+import {loadReferenceSources} from './reference-sources.js';
 import {confirmAction, showDeleteDependencies} from './confirm.js';
 import {scrollCue, updateScrollCues} from './sheet-scroll.js';
+import {rememberSheetContext} from './sheet-context.js';
 import {createRowEditor, type RowEditor, type Row, type Value} from './row-editor.js';
 import {exportarPlanilla, exportarVarias} from './exportar.js';
 
@@ -25,16 +28,31 @@ const status = document.querySelector<HTMLElement>('#status')!;
 const cache = createEntityCache();
 const load = cache.load;
 let stopWatching = () => {};
+let closeReview = () => {};
+let disposeView = () => {};
 let invalidateView: (name: EntityName | null) => void = () => {};
 let resumeLive = () => {};
 let canLeaveView = async () => true;
 let viewGeneration = 0;
-let allEntities: EntityName[] = [];
 let currentEntity: EntityName | null = null;
 const navigation = createTableNavigation(name => {
     if (workspace.disabled) return;
     if (currentEntity === name) navigation.activate(name);
     else void run(() => selectTab(name));
+});
+document.querySelector<HTMLButtonElement>('#open-reports')!.onclick = () => void run(async () => {
+    if (!await canLeaveView()) return;
+    closeReview();
+    disposeView();
+    viewGeneration++;
+    currentEntity = null;
+    invalidateView = () => {};
+    resumeLive = () => {};
+    canLeaveView = async () => true;
+    navigation.activate('');
+    const reports = reportsPage(labels, cache);
+    disposeView = reports.dispose;
+    content.replaceChildren(reports.node);
 });
 
 async function run(work: () => Promise<void>): Promise<void> {
@@ -59,7 +77,9 @@ function rowKey(entity: EntityResponse, row: Row): EntityKey {
     return Object.fromEntries(entity.pk.map(name => [name, values[name]])) as EntityKey;
 }
 
-async function saveRow(entity: EntityResponse, editor: RowEditor, refresh: () => Promise<void>, previous?: {row: Row; version: string}): Promise<void> {
+type RowSnapshot = {row: Row; version: string};
+
+async function saveRow(entity: EntityResponse, editor: RowEditor, refresh: () => Promise<void>, previous?: RowSnapshot): Promise<void> {
     editor.problems([]);
     if (!editor.valid()) return;
     await run(async () => {
@@ -73,7 +93,6 @@ async function saveRow(entity: EntityResponse, editor: RowEditor, refresh: () =>
             throw error;
         }
         editor.saved();
-        cache.invalidate(entity.name);
         await refresh();
         status.textContent = previous ? 'Guardado' : 'Fila agregada correctamente.';
     });
@@ -86,26 +105,33 @@ async function selectTab(name: EntityName): Promise<void> {
     await show(name);
 }
 
+async function loadCurrent<T>(read: () => Promise<T>, isCurrent: () => boolean): Promise<T> {
+    while (isCurrent()) {
+        try {
+            const result = await read();
+            if (isCurrent()) return result;
+        } catch (error) {
+            if (!(error instanceof DOMException && error.name === 'AbortError')) throw error;
+        }
+    }
+    throw new DOMException('Obsolete view', 'AbortError');
+}
+
+async function loadSheet(name: EntityName, query?: EntityQuery) {
+    const entity = await load(name, query);
+    return {entity, sources: await loadReferenceSources(entity.foreignKeys, load)};
+}
+
 async function show(name: EntityName): Promise<void> {
+    disposeView();
     const generation = ++viewGeneration;
     invalidateView = () => {};
     resumeLive = () => {};
-    let entity: EntityResponse;
-    let sources: LoadedReferenceSource[];
-    for (;;) {
-        try {
-            entity = await load(name);
-            sources = await loadReferenceSources(entity.foreignKeys, load);
-            break;
-        } catch (error) {
-            // A live change can invalidate a request while a tab is opening.
-            if (!(error instanceof DOMException && error.name === 'AbortError') || !isAuthenticated() || generation !== viewGeneration) throw error;
-        }
-    }
+    const isCurrent = () => isAuthenticated() && generation === viewGeneration;
+    let {entity, sources} = await loadCurrent(() => loadSheet(name), isCurrent);
     const title = entity.label;
     const unit = title.toLowerCase();
 
-    if (!isAuthenticated() || generation !== viewGeneration) return;
     let columns = createRowEditor(entity, sources, undefined, false).cells;
 
     let filter = '';
@@ -115,13 +141,15 @@ async function show(name: EntityName): Promise<void> {
     let page = 1;
     let pinnedColumn: string | null = null;
     let adding: RowEditor | undefined;
-    const editors = new Map<Row, RowEditor>();
+    const editors = new Map<string, RowSnapshot & {editor: RowEditor}>();
+    const expanded = new Map<string, ReturnType<typeof relatedRows>>();
+    disposeView = () => { for (const view of expanded.values()) view.dispose(); expanded.clear(); };
     const selectedRows = new Map<string, Row>();
     const selectionKey = (row: Row) => JSON.stringify(rowKey(entity, row));
     let selectionCheck = 0;
     const pageSize = entity.browsing.pageSize;
     const query = (): EntityQuery => ({filter, ...(sortCol ? {sort: sortCol} : {}), direction: sortAsc ? 'asc' : 'desc', page, where});
-    const dirty = () => !!adding || [...editors.values()].some(editor => editor.dirty());
+    const dirty = () => !!adding || [...editors.values()].some(({editor}) => editor.dirty());
     canLeaveView = async () => !dirty() || confirmAction({title: 'Descartar borrador',
         message: 'Cambiar de vista descartará los cambios sin guardar. ¿Continuar?', confirmText: 'Descartar', danger: true});
     let queryRevision = 0;
@@ -137,9 +165,7 @@ async function show(name: EntityName): Promise<void> {
         const revision = ++queryRevision;
         table.inert = true;
         try {
-            const next = await load(name, query());
-            if (revision !== queryRevision || generation !== viewGeneration) return false;
-            entity = next;
+            entity = await loadCurrent(() => load(name, query()), () => isCurrent() && revision === queryRevision);
             render();
             return true;
         } catch (error) {
@@ -178,40 +204,59 @@ async function show(name: EntityName): Promise<void> {
         await exportarPlanilla(name, query());
         status.textContent = 'Planilla exportada.';
     })));
+    toolbar.append(createCsvActions(entity, () => refresh(true), run));
     const addButton = actionButton('Agregar fila', 'add', () => { adding ??= createRowEditor(entity, sources); render(); }, 'primary');
     if (!entity.readOnly) toolbar.append(addButton);
     const referenceNotice = element('div');
     referenceNotice.className = 'reference-notice';
     referenceNotice.setAttribute('role', 'status');
 
-    async function refresh(): Promise<void> {
+    async function refresh(preserveDrafts = false): Promise<void> {
         const revision = ++queryRevision;
+        cache.invalidate(name);
         try {
-            cache.invalidate(name);
-            const next = await load(name, query());
-            const nextSources = await loadReferenceSources(next.foreignKeys, load);
-            if (!isAuthenticated() || generation !== viewGeneration || revision !== queryRevision) return;
-            entity = next;
-            sources = nextSources;
+            const next = await loadCurrent(() => {
+                // Each attempt includes the notifications received before it started.
+                pendingRefresh = false;
+                return loadSheet(name, query());
+            }, () => isCurrent() && revision === queryRevision);
+            const currentRows = new Map(next.entity.rows.map((row, index) => [selectionKey(row), {row, version: next.entity.versions[index]}]));
+            for (const [key, {editor, version}] of editors) {
+                if (!preserveDrafts || (!editor.dirty() && currentRows.get(key)?.version !== version)) editors.delete(key);
+            }
+            entity = next.entity;
+            sources = next.sources;
             columns = createRowEditor(entity, sources, undefined, false).cells;
-            adding = undefined;
-            editors.clear();
-            selectedRows.clear();
+            if (!preserveDrafts) adding = undefined;
+            for (const key of selectedRows.keys()) {
+                const current = currentRows.get(key);
+                if (current) selectedRows.set(key, current.row);
+                else if (entity.window.kind === 'complete') selectedRows.delete(key);
+            }
             render();
             await refreshDeleteSelection();
         } finally { if (revision === queryRevision) table.inert = false; }
     }
 
-    const afterSave = async (editor: RowEditor) => {
-        if (adding === editor) adding = undefined;
-        if (!dirty()) await refresh();
+    const afterSave = async (editor: RowEditor, original?: Row) => {
+        if (original && selectedRows.delete(selectionKey(original))) {
+            const key = rowKey(entity, original);
+            const input = editor.read();
+            for (const name of entity.pk) if (input[name] != null) key[name] = input[name];
+            const selected = {...original, ...key};
+            selectedRows.set(selectionKey(selected), selected);
+        }
+        if (adding === editor) {
+            adding = undefined;
+            render();
+        }
+        await refresh(true);
     };
 
     let pendingRefresh = false;
     resumeLive = () => {
-        if (!pendingRefresh || dirty() || workspace.disabled || generation !== viewGeneration) return;
-        pendingRefresh = false;
-        void run(refresh);
+        if (!pendingRefresh || dirty() || workspace.disabled || table.contains(document.activeElement) || generation !== viewGeneration) return;
+        void run(() => refresh(true));
     };
     invalidateView = changed => {
         if (changed !== null && changed !== name && !sources.some(source => source.reference.entity === changed)) return;
@@ -224,6 +269,7 @@ async function show(name: EntityName): Promise<void> {
     };
 
     const table = element('table');
+    table.addEventListener('focusout', () => queueMicrotask(resumeLive));
     const headerRow = table.createTHead().insertRow();
     const idxTh = element('th', '#');
     idxTh.className = 'row-idx';
@@ -370,6 +416,7 @@ async function show(name: EntityName): Promise<void> {
     scroll.addEventListener('scroll', () => updateScrollCues(scroll), {passive: true});
 
     function render(): void {
+        const restoreContext = rememberSheetContext(scroll);
         if (!columns.some(column => column.name === pinnedColumn)) pinnedColumn = null;
         renderHeaders();
 
@@ -378,6 +425,8 @@ async function show(name: EntityName): Promise<void> {
         page = result.page;
         const start = (page - 1) * pageSize;
         const paged = result.rows;
+        const visibleKeys = new Set(paged.map(selectionKey));
+        for (const [key, view] of expanded) if (!visibleKeys.has(key)) { view.dispose(); expanded.delete(key); }
 
         setActionLabel(columnFilters, `Filtrar por columnas (${Object.keys(where ?? {}).length})`);
         count.textContent = filter || Object.keys(where ?? {}).length ? `${result.matched} de ${result.total} ${unit}` : `${result.total} ${unit}`;
@@ -397,6 +446,7 @@ async function show(name: EntityName): Promise<void> {
         if (adding) {
             const tr = tbody.insertRow();
             tr.className = 'new-row';
+            tr.dataset['key'] = 'new';
             const selection = tr.insertCell();
             selection.className = 'selection-col';
             const num = tr.insertCell();
@@ -409,7 +459,7 @@ async function show(name: EntityName): Promise<void> {
             const actions = tr.insertCell();
             actions.className = 'row-actions';
             actions.append(
-                actionButton('Guardar', 'save', () => void saveRow(entity, editor, () => afterSave(editor)), 'primary'),
+                actionButton('Guardar', 'save', () => void saveRow(entity, editor, () => afterSave(editor)), 'primary save-action'),
                 actionButton('Cancelar', 'cancel', () => {
                     void confirmAction({
                         title: 'Descartar nueva fila',
@@ -428,6 +478,7 @@ async function show(name: EntityName): Promise<void> {
 
         paged.forEach((row, i) => {
             const tr = tbody.insertRow();
+            tr.dataset['key'] = selectionKey(row);
             const selected = tr.insertCell();
             selected.className = 'selection-col';
             const checkbox = element('input');
@@ -446,23 +497,64 @@ async function show(name: EntityName): Promise<void> {
             num.className = 'row-idx';
             num.textContent = String(start + i + 1);
 
-            if (!editors.has(row)) {
+            const key = selectionKey(row);
+            if (!editors.has(key)) {
                 const editor = createRowEditor(entity, sources, row);
                 const version = entity.versions[entity.rows.findIndex(candidate => candidate === row)]!;
-                for (const cell of editor.cells) cell.field.addEventListener('change', () => {
-                    void saveRow(entity, editor, () => afterSave(editor), {row, version});
-                });
-                editors.set(row, editor);
+                editors.set(key, {editor, row, version});
             }
-            appendCells(tr, editors.get(row)!);
+            const original = editors.get(key)!;
+            const {editor} = original;
+            appendCells(tr, editor);
 
             const actions = tr.insertCell();
             actions.className = 'row-actions';
+            const save = actionButton('Guardar', 'save', () => void saveRow(entity, editor, () => afterSave(editor, original.row), original), 'primary save-action');
+            const cancel = actionButton('Cancelar', 'cancel', () => {
+                void confirmAction({title: 'Descartar cambios de la fila', message: '¿Descartar los cambios sin guardar de esta fila?',
+                    confirmText: 'Descartar', danger: true}).then(ok => {
+                    if (!ok) return;
+                    editors.delete(key);
+                    render();
+                });
+            });
+            const updateActions = () => {
+                save.hidden = cancel.hidden = !editor.dirty();
+                tr.classList.toggle('draft-row', editor.dirty());
+            };
+            tr.addEventListener('input', updateActions);
+            tr.addEventListener('change', updateActions);
+            updateActions();
+            actions.append(save, cancel);
+            if (entity.referencedBy.length) {
+                const toggle = actionButton('Registros relacionados', 'relations', () => {
+                    if (expanded.has(key)) { expanded.get(key)!.dispose(); expanded.delete(key); }
+                    else expanded.set(key, relatedRows(entity, original.row, cache, {collapsed: true}));
+                    render();
+                });
+                toggle.setAttribute('aria-expanded', String(expanded.has(key)));
+                actions.append(toggle);
+                const view = expanded.get(key);
+                if (view) {
+                    const detail = tbody.insertRow();
+                    detail.className = 'related-detail';
+                    const cell = detail.insertCell();
+                    cell.colSpan = tr.cells.length;
+                    const panel = element('div');
+                    panel.className = 'inline-related';
+                    panel.append(...view.sections);
+                    cell.append(panel);
+                }
+            }
             actions.append(actionButton('Ver datos actuales', 'review', () => void run(async () => {
                 cache.invalidate(name);
-                const query = {where: rowKey(entity, row)} as EntityQuery;
+                const query = {where: rowKey(entity, original.row)} as EntityQuery;
                 const current = entityPage(await load(name, query), query).rows[0];
-                reviewRow(entity, row, editors.get(row)!.read(), current, ...await relatedRows(entity, row, Object.keys(labels), load));
+                closeReview();
+                const related = relatedRows(entity, original.row, cache);
+                const dialog = reviewRow(entity, original.row, editor.read(), current, ...related.sections);
+                closeReview = () => { related.dispose(); dialog.close(); };
+                dialog.addEventListener('close', related.dispose, {once: true});
             })));
         });
         if (entity.readOnly) for (const field of tbody.querySelectorAll<HTMLInputElement | HTMLSelectElement>('.field input, .field select')) field.disabled = true;
@@ -476,6 +568,7 @@ async function show(name: EntityName): Promise<void> {
         // Anchor the left cue after any pinned column, over the scrolling headers.
         (headerRow.querySelector('.pinned-col') ?? selectTh).append(leftCue);
         updateScrollCues(scroll);
+        restoreContext();
     }
 
     function renderMissingReferences(): void {
@@ -511,6 +604,8 @@ document.querySelector<HTMLButtonElement>('#export-tables')!.onclick = () => voi
 initializeAuthentication(active => {
     workspace.hidden = !active;
     if (!active) {
+        closeReview();
+        disposeView();
         stopWatching();
         cache.clear();
         viewGeneration++;
@@ -525,11 +620,10 @@ initializeAuthentication(active => {
     void run(async () => {
         const catalog = await listEntities();
         if (!isAuthenticated()) return;
-        allEntities = catalog.map(entity => entity.name);
         labels = Object.fromEntries(catalog.map(entity => [entity.name, entity.label]));
         catalogEntries = catalog;
         navigation.catalog(catalog);
-        if (allEntities[0]) await selectTab(allEntities[0]);
+        if (catalog[0]) await selectTab(catalog[0].name);
         else content.textContent = 'No hay planillas disponibles.';
         stopWatching = watchEntities(name => { cache.invalidate(name); invalidateView(name); });
     });

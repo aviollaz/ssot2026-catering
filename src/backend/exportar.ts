@@ -1,12 +1,11 @@
 import type {Pool} from 'pg';
 import {completeEntity, type EntityInfo} from 'system-definition';
-import {quotePgIdentifier as quote} from '@system-definition/postgres-migrations';
 import {entityLabels, myContext, myEntities} from './system.js';
 import type {EntityName} from './api-contract.js';
 import {ApiFailure} from './api-errors.js';
 import {allowedFields} from './column-security.js';
-import {entityTable} from './entity-write.js';
-import {querySql, readQuery} from './entity-query.js';
+import {sql, identifier, entityTable, joinSql, querySql} from './sql.js';
+import {queryOrder, queryPredicate, readQuery} from './entity-query.js';
 import {xlsx, type Celda, type Hoja} from './xlsx.js';
 
 // Accounts never leave the system; customers' contact data is left out unless asked for.
@@ -26,11 +25,9 @@ async function hoja(db: Pick<Pool, 'query'>, name: EntityName, consulta: unknown
     const entity = entidades.get(name)!;
     const readable = allowedFields(entity, 'read');
     const query = readQuery(consulta ?? {}, readable);
-    const values: unknown[] = [];
-    const {predicates, order} = querySql(readable, entity.pk, query, value => { values.push(value); return `$${values.length}`; });
     const columnas = Object.values(readable).filter(field => field.visible && (contacto || !datosDeContacto[name]?.includes(field.name)));
-    const {rows} = await db.query<Record<string, unknown>>(`SELECT ${columnas.map(field => quote(field.name)).join(', ')} FROM ${entityTable(name)} ` +
-        `WHERE ${predicates.join(' AND ') || 'TRUE'} ORDER BY ${order} LIMIT ${maxFilas + 1}`, values);
+    const {rows} = await querySql<Record<string, unknown>>(db, sql`SELECT ${joinSql(columnas.map(field => identifier(field.name)))} FROM ${entityTable(name)}
+        WHERE ${queryPredicate(readable, query)} ORDER BY ${queryOrder(readable, entity.pk, query)} LIMIT ${maxFilas + 1}`);
     if (rows.length > maxFilas) throw new ApiFailure(400, `${entityLabels[name]} tiene más de ${maxFilas} filas: filtrala antes de exportar.`);
 
     const nombres = new Map<string, Map<string, string>>();
@@ -40,8 +37,8 @@ async function hoja(db: Pick<Pool, 'query'>, name: EntityName, consulta: unknown
         const descriptivos = Object.values(allowedFields(target, 'read')).filter(field => field.isName).map(field => field.name);
         if (pairs.length !== 1 || !descriptivos.length || !columnas.some(field => field.name === pairs[0]![0])) continue;
         const [source, destination] = pairs[0]!;
-        const {rows: opciones} = await db.query<{clave: string; nombre: string}>(`SELECT ${quote(destination)}::text AS clave, ` +
-            `concat_ws(' — ', ${descriptivos.map(field => `${quote(field)}::text`).join(', ')}) AS nombre FROM ${entityTable(fk.entity)}`);
+        const {rows: opciones} = await querySql<{clave: string; nombre: string}>(db, sql`SELECT ${identifier(destination)}::text AS clave,
+            concat_ws(' — ', ${joinSql(descriptivos.map(field => sql`${identifier(field)}::text`))}) AS nombre FROM ${entityTable(fk.entity)}`);
         nombres.set(source, new Map(opciones.map(option => [option.clave, option.nombre])));
     }
     const celda = (field: (typeof columnas)[number], value: unknown): Celda => {

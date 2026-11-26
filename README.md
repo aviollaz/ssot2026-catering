@@ -491,7 +491,13 @@ expire 24 hours after login (without sliding renewal) and validate the algorithm
 claims. Every authenticated request also checks the account's existence and
 session version. Account updates, password resets/changes and logout
 revoke existing sessions. Logout closes all sessions for that account. The browser
-keeps its token in memory; reloading requires logging in again.
+keeps its token in `localStorage`, so reloading, navigating away and back, or
+restarting the browser restores the session after validating it with
+`GET /api/auth/me`. Existing tab-scoped tokens migrate on the next load.
+Logout, revocation or expiry clears the saved token; logout also clears active
+views in other tabs through storage notifications. A temporary server error
+retains the token for a later reload. Persistence does not extend the one-day expiry.
+When browser storage is unavailable, login still works in memory until reload.
 
 The users table is a required SSOT entity. Anonymous access is limited to login
 and recovery handlers; all entity CRUD requires authentication.
@@ -582,6 +588,8 @@ filter/pagination controls, sticky column headers, and pinned selection/action
 columns inside a single two-axis scroll area. The drawer becomes a permanent
 sidebar only when its text and the sheet fit together without horizontal overflow.
 Actions use labelled icons with text added when space permits.
+The small theme button in the header switches between light and dark palettes and
+remembers the choice in this browser. Until a choice is made, it follows the system theme.
 Each data-column header has a pin toggle. One column at a time can be kept next
 to the row selectors; unpinning restores the API order. The pin survives paging,
 sorting and refreshes of the current sheet, and moving it preserves unsaved input.
@@ -592,9 +600,15 @@ fixed columns. Indicators update on scrolling, resizing and sheet changes, and
 disappear when the sheet fits.
 
 The sheet supports inline editing, insertion, text search, typed column equality
-filters, sorting, hybrid pagination and selection-based deletion confirmations. Existing rows save on change after their
-inputs are valid; new rows use **Guardar**. Entity definitions, fields and inputs
+filters, sorting, hybrid pagination and selection-based deletion confirmations.
+Existing rows show **Guardar / Cancelar** when edited; moving between fields does
+not save. **Guardar** validates and submits the whole row together. New rows also
+use **Guardar**. Entity definitions, fields and inputs
 come from the API, including friendly entity labels defined in the backend.
+Successful saves reload the sheet and close the insertion controls while preserving
+other unfinished rows. Reloads retry when live events invalidate an in-flight response.
+Reloads retain existing row selections and reuse unchanged editors. Rerendering
+preserves the focused control, caret and sheet scroll position when that control remains available.
 Foreign keys use dropdowns populated from the referenced entity.
 Option labels combine the field's code and readable fields marked `isName` in
 the SSOT; plans display their number and description. Nullable references include
@@ -634,8 +648,10 @@ or additional dependency.
 
 `GET /health` checks the database connection. All `/api/entities` requests require
 `Authorization: Bearer <JWT>`. `GET /api/entities` returns the
-available `{name, label}` entries. `GET /api/entities/:name` returns
-`{name, label, browsing, pk, columns, inputs, foreignKeys, rows, versions, window}`,
+available `{name, label, area}` entries. The menu groups these entries by their
+backend-supplied area, with collapsible groups and filtering.
+`GET /api/entities/:name` returns
+`{name, label, csv, browsing, pk, columns, inputs, foreignKeys, rows, versions, window}`,
 with `{name, label, type, nullable, writable, constraints}` for each visible readable column.
 SSOT `visible: false` hides a column without removing its internal key from rows;
 the generated user ID uses this setting and remains non-writable. Keys identify rows for
@@ -671,6 +687,9 @@ notification channel before scaling beyond the current deployment.
 The `materias.plan` relationship references `planes.plan`; deleting or renumbering
 a referenced plan is rejected. Migration `0004_materias_plan_fk` adds only that
 constraint and requires existing non-null plan values to have matching rows.
+Changing a referenced primary key (for example, a Materia code used by
+Inscripciones) remains blocked. The save error identifies the dependent entity;
+the row stays in draft until its key is corrected or its changes are cancelled.
 
 All mutations use JSON at `/api/entities/:name`:
 
@@ -694,12 +713,84 @@ of overwriting another user's work. The spreadsheet preserves the draft, offers
 **Ver datos actuales** to compare values, and asks before discarding it on refresh
 or navigation.
 
+The same review shows incoming related records. The row's **Registros relacionados**
+button also expands them inline in the primary spreadsheet, with one collapsible
+section per relationship. Closed inline sections load only when expanded.
+Both views offer search, sorting, typed column filters and pagination. Filters
+cannot override the parent relationship's key. Entity responses supply
+`references` (readable outgoing foreign keys) and `referencedBy` (incoming
+relationships with source labels and field mappings), derived from the SSOT.
+The browser discovers relationships from that metadata. Each section uses the
+existing page size and client/server threshold, with independent pagination.
+Association-table fields remain visible alongside labels from their outgoing
+references; the browser does not infer domain-specific many-to-many semantics.
+Only visible rows need target lookups, using exact key filters. Visited pages are
+cached until the review closes; live notifications invalidate affected pages and
+labels while preserving spreadsheet drafts. Failed loads can be retried in place.
+
+**Reportes**, in the table navigation panel, starts from an API-discovered table.
+`GET /api/entities/:name/report` supplies visible readable fields, aggregate
+operations and available SSOT foreign-key relationships in both directions.
+`POST /api/entities/:name/report/definition` with `{joins}` returns the fields and
+relationships for the chosen table occurrences. Each join is
+`{source, relationship, kind: 'inner' | 'left'}`: source 0 is the initial table,
+and join i introduces source i+1. Relationships are opaque IDs from the API;
+each step must start from an existing occurrence. Composite keys, self-joins,
+repeated tables and association-table chains use the same mechanism. The browser
+does not supply table names or SQL join predicates for these steps.
+
+`POST /api/entities/:name/report` accepts
+`{joins?, groupBy, measures, filter?, where?, page?}`. Field references use the
+opaque `columns[].name` values from the matching definition; joined definitions
+qualify them by occurrence. Changing the join structure or join types resets
+field selections and filters; removing an occurrence removes its descendants and
+retains other branches. Each measure is `{operation, field}`, or one of:
+
+- `{operation: 'count'}` counts result rows, including null-extended left-join rows.
+- `{operation: 'countDistinct', source}` counts distinct records of that occurrence
+  using its complete primary key. Unmatched records count as zero. This operation
+  is exposed only when every key component is readable; hidden readable keys need
+  not be exposed as selectable report fields.
+
+For example, one parent with two children produces two rows but one distinct
+parent. An unmatched parent in a left join produces one row and zero distinct
+children. Sums and averages operate on joined rows, so repeated records contribute
+repeatedly; they do not automatically deduplicate entity values.
+The backend derives capabilities from the SSOT's SQL type mapping: numeric fields
+support count/sum/average/min/max; text supports count/min/max; booleans support
+count. Field counts exclude nulls. Filters apply after joining and before grouping:
+filtering a joined field to a non-null value can exclude unmatched left-join rows.
+Null groups are retained, and group pages use deterministic ordering.
+Aggregates are returned as text to preserve PostgreSQL numeric precision.
+The page refreshes on live changes to any selected table and releases its subscription on
+navigation or logout. Report queries always aggregate and paginate on the server.
+Saved report definitions are not implemented.
+
 Successful mutations return HTTP 204. The backend checks exact field sets, types,
 nullability and declared entity validators using system-definition before writing
 through the app connection. SQL values are parameterized. Unknown entities or
 missing rows on deletion return 404, invalid input returns 400, and database constraint
 conflicts return 409. Unexpected failures return 500 without exposing SQL details.
 The old `/poc/*` handlers were replaced by this shared API.
+
+CSV actions use the same authenticated API at `/api/entities/:name/csv`:
+
+- `GET` exports all saved rows, regardless of pagination or UI filters, and only
+  visible readable columns. Unsaved drafts are excluded.
+- `POST` accepts `text/csv`, validates against the SSOT and inserts new rows in a
+  transaction. Identical rows are counted as unchanged; conflicting keys or
+  invalid references roll back the entire import. Successful inserts publish
+  the same live invalidation as ordinary writes.
+- Entity metadata supplies `csv: {export, import, maxBytes}`. Import is available
+  only when the public columns can reconstruct all writable fields and keys
+  without generated or transformed values. The browser has no entity-name exceptions.
+  The upload limit is configured once in `src/backend/csv-settings.ts` (10 MiB).
+
+Use an export as the import template: headers are the current SSOT column labels,
+in their exported order. CSV uses UTF-8, comma separators and doubled quotes;
+quoted cells can contain commas and newlines. An **unquoted empty cell means
+null**, while `""` means empty text. This preserves the distinction already used
+by the database and editors. Imports refresh saved rows while preserving drafts.
 
 Backend types in `src/backend/api-contract.ts` derive concrete field names, value
 types, nullability and primary keys from the SSOT. Type checks also verify that
@@ -708,8 +799,12 @@ those responses satisfy the independent browser protocol.
 Static backend queries use `entitySql` to quote SSOT-checked column names and
 derive SELECT result types from their selected fields. Authentication reuses
 these selections, and bootstrap inputs are checked against the SSOT. The helper
-does not parse SQL clauses or validate the live database; parameterized values,
-runtime input validation and migration checks still serve those responsibilities.
+uses the shared `sql` tagged template. `sql.ts` is the app's sole boundary for
+quoting identifiers and assigning value placeholders, including nested fragments.
+CRUD, browsing, authentication, CSV, bootstrap and reports use it; interpolated
+strings are parameters unless explicitly constructed as SQL fragments or quoted
+identifiers. Query logic remains with each feature. Runtime input validation and
+migration checks still validate incoming data and the live database.
 
 ```sh
 npm run test:api
@@ -736,5 +831,5 @@ DB, checks mobile scrolling/sticky geometry and desktop docking, and exercises
 navigation, typed filters and dropdown validity against the real API. Set
 `UI_SCREENSHOT` to an output PNG path to capture the mobile view.
 
-The selected contributions from PRs #15, #16 and #6, their authors, and the
+The selected contributions from PRs #6, #15, #16, #34, #39, #40, #41 and #42, their authors, and the
 compatibility adjustments are recorded in [PR integration notes](docs/pr-integration.md).

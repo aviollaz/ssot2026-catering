@@ -7,7 +7,8 @@ import type {EntityName, StoredRow} from './api-contract.js';
 import {ApiFailure, apiErrorHandler, readObject} from './api-errors.js';
 import {authenticationLimit, type Authentication} from './auth.js';
 import {customerPrincipal, type CustomerAuthentication} from './customer-auth.js';
-import {entityTable, insertPreparedRow, prepareEntityWrite} from './entity-write.js';
+import {insertPreparedRow, prepareEntityWrite} from './entity-write.js';
+import {compileSql, entityTable} from './sql.js';
 import {cateringConfig} from './catering-config.js';
 import {datosDeContacto, exportables, exportarTablas} from './exportar.js';
 import {localDateTime} from './value-types.js';
@@ -16,9 +17,10 @@ import type {CatalogoResponse, EstadoPedidoResponse, ExportablesResponse, NuevoP
 
 type Db = Pick<Pool, 'query' | 'connect'>;
 type EstadoPedido = StoredRow<'pedidos'>['estado'];
+const tabla = (name: string) => compileSql(entityTable(name)).text;
 const T = {
-    platos: entityTable('platos'), servicios: entityTable('servicios'), servicio_platos: entityTable('servicio_platos'),
-    pedidos: entityTable('pedidos'), pedido_platos: entityTable('pedido_platos'),
+    platos: tabla('platos'), servicios: tabla('servicios'), servicio_platos: tabla('servicio_platos'),
+    pedidos: tabla('pedidos'), pedido_platos: tabla('pedido_platos'),
 };
 const pedidos = completeEntity(myContext, myEntities.pedidos);
 const pedidoPlatos = completeEntity(myContext, myEntities.pedido_platos);

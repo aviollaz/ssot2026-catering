@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Catering · Gestión</title>
+    <script src="/theme.js"></script>
     <link rel="stylesheet" href="/style.css">
     <link rel="stylesheet" href="/catering.css">
     <script type="module" src="/assets/main.js"></script>
@@ -13,6 +14,7 @@
         <header class="page-header">
             <button id="open-tables" type="button" aria-label="Abrir planillas" aria-controls="tables-panel" aria-expanded="false" hidden>☰</button>
             <div class="user-nav">
+                <button id="theme-toggle" type="button" aria-label="Cambiar a tema oscuro" title="Cambiar a tema oscuro" aria-pressed="false"><span aria-hidden="true">☾</span></button>
                 <div id="session" class="session-info" hidden>
                     <span class="user-badge"><strong id="session-user"></strong></span>
                     <button id="manage-account" type="button">Mi cuenta</button>
@@ -82,6 +84,7 @@
                     <button id="close-tables" type="button" aria-label="Cerrar planillas">✕</button>
                 </div>
                 <input id="table-search" type="search" placeholder="Buscar planilla…" aria-label="Buscar planilla">
+                <button id="open-reports" type="button">Reportes</button>
                 <nav id="table-list" aria-label="Planillas disponibles"></nav>
                 <button id="export-tables" type="button">Exportar a Excel…</button>
             </dialog>
