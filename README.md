@@ -484,7 +484,12 @@ password. Their tokens have a distinct audience and cannot access administrator
 entities or catering-management endpoints. They can only register, sign in/out and
 place orders; the server associates each order with the authenticated customer.
 Existing orders remain unowned (`cliente_id` is nullable), and customer-facing
-status lookup continues to use the order's secret code.
+status lookup continues to use the order's secret code. Only an order without an
+account keeps the customer's name and email, in `pedido_invitados`; an account's
+orders read them from `clientes`. Linking a guest order to an account moves it
+there and removes its guest row, so neither is stored twice. An ingredient's stock
+is not stored either: it is the sum of its `movimiento_ingredientes`, entered in
+the generic sheets, and the example stock loads as one initial `Ajuste`.
 
 Passwords use salted scrypt (`N=32768, r=8, p=3`). JWTs use HS256 through `jose`,
 expire 24 hours after login (without sliding renewal) and validate the algorithm, issuer, audience and required

@@ -31,12 +31,13 @@ Se eliminan plan, materia, departamento, estudiante, enrolamiento, regularidad y
 
 | Entidad | Campos (PK en **negrita**) | FKs |
 |---|---|---|
-| `ingredientes` | **cod_ing**, nombre (isName), unidad, stock_actual (cantidad) | — |
+| `ingredientes` | **cod_ing**, nombre (isName), unidad, unidad_compra (nullable). El stock no se guarda: es la suma de `movimiento_ingredientes.cantidad` | unidades |
 | `platos` | **cod_plato**, nombre (isName), descripcion, categoria, porciones_receta (posInteger: cuántas porciones rinde la receta), precio_porcion (posInteger), activo (boolean) | — |
 | `recetas` | **cod_plato, cod_ing**, cantidad (posInteger, en la unidad del ingrediente, por receta completa) | platos, ingredientes |
 | `servicios` | **cod_servicio**, nombre (isName), descripcion, precio_persona, min_personas, activo | — |
 | `servicio_platos` | **cod_servicio, cod_plato**, porciones_por_persona (posInteger) | servicios, platos |
-| `pedidos` | **id** (uuid, onCreate, no editable), cliente_nombre, cliente_email, cliente_telefono, direccion, fecha_evento (fechaHora), personas (posInteger), estado, cod_servicio (nullable), total (posInteger, lo calcula el servidor), observaciones (nullable), creado (fechaHora) | servicios |
+| `pedidos` | **id** (uuid, onCreate, no editable), cliente_id (nullable), cliente_telefono, direccion, fecha_evento (fechaHora), personas (posInteger), estado, cod_servicio (nullable), total (posInteger, lo calcula el servidor), observaciones (nullable), creado (fechaHora) | servicios, clientes |
+| `pedido_invitados` | **pedido**, nombre (isName), email. Solo para pedidos sin cuenta: los de una cuenta toman nombre y email de `clientes` | pedidos |
 | `pedido_platos` | **pedido, cod_plato**, porciones (posInteger), precio_porcion (copia del precio al momento del pedido) | pedidos, platos |
 
 Puntos clave del diseño, para explicar en el TP:
@@ -57,7 +58,7 @@ necesidad(p,i) = Σ porciones · receta.cantidad / plato.porciones_receta   (ped
 acum(p,i)      = SUM(necesidad) OVER (PARTITION BY i ORDER BY fecha_evento, id)
 comprar(p,i)   = CEIL( max(0, acum − stock) − max(0, acum − necesidad − stock) )
 ```
-Así el stock se asigna primero a los pedidos más tempranos, y cada pedido compra solo su propio faltante. Los pedidos Entregados no cuentan, porque su consumo ya se descontó del `stock_actual`. Los Pendientes y Cancelados tampoco cuentan.
+Así el stock se asigna primero a los pedidos más tempranos, y cada pedido compra solo su propio faltante. Los pedidos Entregados no cuentan, porque su consumo ya se descontó del stock con un Egreso. Los Pendientes y Cancelados tampoco cuentan.
 Opcional, solo si sobra tiempo: `GET /api/catering/compras?desde&hasta` arma la lista consolidada de compras de todos los confirmados de un período, para "lo que hay que comprar esta semana".
 
 Transición de estado: `POST /api/catering/pedidos/:id/entregar` pasa el pedido a Entregado y **descuenta el stock en la misma transacción** (`UPDATE ingredientes ... FROM (consumo)`). Sirve para mostrar transacciones y consistencia. Los demás cambios de estado se hacen con la planilla genérica.

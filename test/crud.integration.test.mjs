@@ -47,7 +47,7 @@ test('server startup, authenticated CRUD and atomic bulk deletion use the app co
             });
             await t.test('CRUD preserves types, unrelated fields and composite keys', async () => {
                 for (const [cod_ing, nombre] of [['HAR', 'Harina'], ['QUE', 'Queso'], ['MAN', 'Manteca']]) {
-                    assert.equal((await send('ingredientes', 'POST', {cod_ing, nombre, unidad: 'g', stock_actual: 0, unidad_compra: null})).status, 204);
+                    assert.equal((await send('ingredientes', 'POST', {cod_ing, nombre, unidad: 'g', unidad_compra: null})).status, 204);
                 }
                 const dish = {cod_plato: 'EMP', nombre: 'Empanadas', descripcion: null, categoria: 'Finger food', porciones_receta: 12, precio_porcion: 900, activo: true};
                 assert.equal((await send('platos', 'POST', dish)).status, 204);
@@ -66,7 +66,7 @@ test('server startup, authenticated CRUD and atomic bulk deletion use the app co
                 assert.equal((await send('recetas', 'DELETE', {cod_plato: 'EMP', cod_ing: 'QUE'})).status, 204);
             });
             await t.test('dependency previews and failed batches preserve every selected row', async () => {
-                for (const cod_ing of ['A1', 'A2']) assert.equal((await send('ingredientes', 'POST', {cod_ing, nombre: cod_ing, unidad: 'u', stock_actual: 1, unidad_compra: null})).status, 204);
+                for (const cod_ing of ['A1', 'A2']) assert.equal((await send('ingredientes', 'POST', {cod_ing, nombre: cod_ing, unidad: 'u', unidad_compra: null})).status, 204);
                 assert.equal((await send('recetas', 'POST', {cod_plato: 'EMP', cod_ing: 'HAR', cantidad: 1})).status, 204);
                 const keys = [{cod_ing: 'A1'}, {cod_ing: 'HAR'}];
                 const preview = await (await send('ingredientes/delete-check', 'POST', {keys})).json();
@@ -79,7 +79,7 @@ test('server startup, authenticated CRUD and atomic bulk deletion use the app co
                 assert.deepEqual((await pool.query('SELECT cod_ing FROM ssot.ingredientes ORDER BY cod_ing')).rows, [{cod_ing: 'HAR'}, {cod_ing: 'MAN'}, {cod_ing: 'QUE'}]);
             });
             await t.test('generated keys, timestamps and renamed FK fields follow the SSOT', async () => {
-                const order = {cliente_nombre: 'Ana', cliente_email: 'ana@example.com', cliente_telefono: '1', direccion: 'Calle 1',
+                const order = {cliente_telefono: '1', direccion: 'Calle 1',
                     fecha_evento: '2026-11-12T20:00', personas: 10, estado: 'Pendiente', cod_servicio: null, total: 9000, observaciones: null};
                 assert.equal((await send('pedidos', 'POST', order)).status, 204);
                 const [stored] = (await (await send('pedidos')).json()).rows;
@@ -97,13 +97,13 @@ test('server startup, authenticated CRUD and atomic bulk deletion use the app co
                 assert.equal((await send('pedidos/bulk-delete', 'POST', {keys})).status, 204);
             });
             await t.test('SQL-looking input remains data across CRUD, filters, pagination, dependency checks and authentication', async () => {
-                await pool.query("INSERT INTO ssot.ingredientes (cod_ing, nombre, unidad, stock_actual) SELECT 'sentinel-' || i, 'Unchanged', 'g', 0 FROM generate_series(1,200) i");
+                await pool.query("INSERT INTO ssot.ingredientes (cod_ing, nombre, unidad) SELECT 'sentinel-' || i, 'Unchanged', 'g' FROM generate_series(1,200) i");
                 const baseline = (await pool.query('SELECT cod_ing, nombre FROM ssot.ingredientes ORDER BY cod_ing')).rows;
                 const payloads = ["' OR '1'='1", "'); DROP TABLE ssot.ingredientes; --", '"; SELECT pg_sleep(2); --',
                     "/* comment */ UNION SELECT 'secret'", '100%_literal\\value', 'Unicode ＇；--'];
                 const query = value => `/api/entities/ingredientes?query=${encodeURIComponent(JSON.stringify(value))}`;
                 for (const [index, payload] of payloads.entries()) {
-                    const row = {cod_ing: payload, nombre: payload, unidad: 'g', stock_actual: 0, unidad_compra: null};
+                    const row = {cod_ing: payload, nombre: payload, unidad: 'g', unidad_compra: null};
                     assert.equal((await send('ingredientes', 'POST', row)).status, 204);
                     for (const search of [{filter: payload}, {where: {cod_ing: payload}}]) {
                         const response = await request(query(search));

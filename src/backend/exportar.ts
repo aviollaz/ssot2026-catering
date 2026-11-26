@@ -10,7 +10,9 @@ import {xlsx, type Celda, type Hoja} from './xlsx.js';
 
 // Accounts never leave the system; customers' contact data is left out unless asked for.
 const noExportables: readonly EntityName[] = ['usuarios'];
-export const datosDeContacto: Partial<Record<EntityName, readonly string[]>> = {pedidos: ['cliente_email', 'cliente_telefono', 'direccion']};
+export const datosDeContacto: Partial<Record<EntityName, readonly string[]>> = {
+    pedidos: ['cliente_telefono', 'direccion'], pedido_invitados: ['email'],
+};
 const maxFilas = 50000;
 
 const entidades = new Map<string, EntityInfo<typeof myContext>>(Object.values(myEntities)

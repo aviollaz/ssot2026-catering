@@ -37,13 +37,14 @@ async function startServer(pool) {
 test('table navigation and spreadsheet work with the real API', {timeout: 90000}, async t => {
     await withTestDatabase(async ({pool}) => {
         await initializeUsers(pool, {username: 'browser', password: 'browser-test-password'});
-        await pool.query("INSERT INTO ssot.ingredientes (cod_ing, nombre, unidad, stock_actual) SELECT 'I' || lpad(i::text, 3, '0'), 'Ingrediente ' || i, 'g', i FROM generate_series(1,201) i");
+        await pool.query("INSERT INTO ssot.ingredientes (cod_ing, nombre, unidad) SELECT 'I' || lpad(i::text, 3, '0'), 'Ingrediente ' || i, 'g' FROM generate_series(1,201) i");
         await pool.query("INSERT INTO ssot.platos (cod_plato, nombre, descripcion, categoria, porciones_receta, precio_porcion, activo) VALUES ('EMP', 'Empanadas', 'De carne', 'Finger food', 12, 900, true)");
         await pool.query("INSERT INTO ssot.recetas (cod_plato, cod_ing, cantidad) VALUES ('EMP', 'I001', 600)");
         await pool.query("INSERT INTO ssot.servicios (cod_servicio, nombre, descripcion, precio_persona, min_personas, activo) VALUES ('COCTEL', 'Cóctel', 'De pie', 1000, 10, true)");
         await pool.query("INSERT INTO ssot.servicio_platos (cod_servicio, cod_plato, porciones_por_persona) VALUES ('COCTEL', 'EMP', 3)");
-        await pool.query(`INSERT INTO ssot.pedidos (id, cliente_nombre, cliente_email, cliente_telefono, direccion, fecha_evento, personas, estado, cod_servicio, total, observaciones, creado)
-            VALUES ('00000000-0000-4000-8000-000000000001', 'Ana', 'ana@example.com', '1', 'Calle 1', '2026-11-12 20:00', 40, 'Confirmado', 'COCTEL', 40000, NULL, '2026-10-01 10:00')`);
+        await pool.query(`INSERT INTO ssot.pedidos (id, cliente_telefono, direccion, fecha_evento, personas, estado, cod_servicio, total, observaciones, creado)
+            VALUES ('00000000-0000-4000-8000-000000000001', '1', 'Calle 1', '2026-11-12 20:00', 40, 'Confirmado', 'COCTEL', 40000, NULL, '2026-10-01 10:00')`);
+        await pool.query("INSERT INTO ssot.pedido_invitados (pedido, nombre, email) VALUES ('00000000-0000-4000-8000-000000000001', 'Ana', 'ana@example.com')");
         await pool.query("INSERT INTO ssot.pedido_platos (pedido, cod_plato, porciones, precio_porcion) VALUES ('00000000-0000-4000-8000-000000000001', 'EMP', 120, 900)");
         const server = await startServer(pool);
         try {
@@ -172,13 +173,13 @@ test('table navigation and spreadsheet work with the real API', {timeout: 90000}
                 await t.test('column filters narrow the rows and can be removed', async () => {
                     await inPage(() => {
                         document.querySelector('[aria-label^="Filtrar por columnas"]').click();
-                        const stock = document.querySelector('.column-filters [name=stock_actual]');
-                        stock.closest('fieldset').previousElementSibling.querySelector('input').click(); // enables the stock filter
-                        stock.value = '201';
+                        const code = document.querySelector('.column-filters [name=cod_ing]');
+                        code.closest('fieldset').previousElementSibling.querySelector('input').click(); // enables the code filter
+                        code.value = 'I201';
                         document.querySelector('.column-filters form').requestSubmit();
                     });
                     await waitFor(() => !document.querySelector('.column-filters') && document.querySelectorAll('tbody tr').length === 1);
-                    assert.equal(await valueOf('tbody [name=stock_actual]'), '201');
+                    assert.equal(await valueOf('tbody [name=cod_ing]'), 'I201');
 
                     await inPage(() => {
                         document.querySelector('[aria-label^="Filtrar por columnas"]').click();
@@ -244,7 +245,7 @@ test('table navigation and spreadsheet work with the real API', {timeout: 90000}
 
                 await t.test('paging, editing and adding keep the pinned column', async () => {
                     await click('.pagination [aria-label=Siguiente]');
-                    await waitFor(() => document.querySelector('tbody [name=stock_actual]')?.value === '11');
+                    await waitFor(() => document.querySelector('tbody [name=cod_ing]')?.value === 'I011');
                     assert.equal(await valueOf('tbody .pinned-col [name=nombre]'), 'Ingrediente 11');
 
                     // Saving an edited pinned cell writes it to the database.
@@ -261,22 +262,22 @@ test('table navigation and spreadsheet work with the real API', {timeout: 90000}
                     // Moving the pin keeps what was typed in a new row.
                     await click('[aria-label="Agregar fila"]');
                     await setValue('tr.new-row [name=nombre]', 'Keep draft');
-                    await click('th[data-column=stock_actual] .column-pin');
+                    await click('th[data-column=cod_ing] .column-pin');
                     assert.equal(await valueOf('tr.new-row [name=nombre]'), 'Keep draft');
                     assert.equal(await inPage(() => document.querySelectorAll('th.pinned-col').length), 1);
-                    assert.equal(await inPage(() => document.querySelector('tr.new-row .pinned-col').dataset.column), 'stock_actual');
+                    assert.equal(await inPage(() => document.querySelector('tr.new-row .pinned-col').dataset.column), 'cod_ing');
                     await click('tr.new-row [aria-label=Cancelar]');
                     await click('#confirm-ok');
                     await waitFor(() => !document.querySelector('tr.new-row'));
 
                     // Sorting keeps the pin; unpinning restores the API column order.
-                    await click('th[data-column=stock_actual] .column-label');
-                    await waitFor(() => document.querySelector('th[data-column=stock_actual]').getAttribute('aria-sort') === 'ascending' &&
-                        document.querySelector('tbody [name=stock_actual]')?.value === '1');
-                    await click('th[data-column=stock_actual] .column-pin');
+                    await click('th[data-column=cod_ing] .column-label');
+                    await waitFor(() => document.querySelector('th[data-column=cod_ing]').getAttribute('aria-sort') === 'ascending' &&
+                        document.querySelector('tbody [name=cod_ing]')?.value === 'I001');
+                    await click('th[data-column=cod_ing] .column-pin');
                     assert.equal(await inPage(() => document.querySelectorAll('.pinned-col').length), 0);
                     assert.deepEqual(await inPage(() => [...document.querySelectorAll('thead [data-column]')].map(cell => cell.dataset.column)),
-                        ['cod_ing', 'nombre', 'unidad', 'stock_actual', 'unidad_compra']);
+                        ['cod_ing', 'nombre', 'unidad', 'unidad_compra']);
                 });
 
                 await t.test('arrows show hidden columns and scroll to them', async () => {
@@ -424,9 +425,12 @@ test('table navigation and spreadsheet work with the real API', {timeout: 90000}
                     assert.equal(await evaluate("return !document.querySelector('#cliente-nav').hidden"), true);
                     assert.deepEqual((await pool.query("SELECT nombre, apellido FROM ssot.clientes WHERE email = 'laura@example.com'")).rows,
                         [{nombre: 'Laura', apellido: 'García'}]);
+                    // The account view shows before its request linking the new order finishes.
+                    await until(async () => (await pool.query('SELECT cliente_id FROM ssot.pedidos WHERE id = $1', [code])).rows[0].cliente_id !== null);
                     assert.deepEqual((await pool.query('SELECT estado, total, personas, cliente_id FROM ssot.pedidos WHERE id = $1', [code])).rows,
                         [{estado: 'Pendiente', total: 12000, personas: 12,
                             cliente_id: (await pool.query("SELECT id FROM ssot.clientes WHERE email = 'laura@example.com'")).rows[0].id}]);
+                    assert.deepEqual((await pool.query('SELECT * FROM ssot.pedido_invitados WHERE pedido = $1', [code])).rows, []);
                     assert.deepEqual((await pool.query('SELECT cod_plato, porciones FROM ssot.pedido_platos WHERE pedido = $1', [code])).rows, [{cod_plato: 'EMP', porciones: 36}]);
                     await send('Page.reload');
                     await until(() => evaluate("return !document.querySelector('#inicio-con-sesion').hidden && document.querySelector('#inicio-identidad').textContent.includes('laura@example.com')"));

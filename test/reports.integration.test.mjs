@@ -147,7 +147,7 @@ test('reports authenticate, validate SSOT capabilities and paginate grouped Post
             await t.test('SSOT paths support N:M joins, left joins and explicit distinct-record counts', async () => {
                 await pool.query('DELETE FROM ssot.platos');
                 await pool.query(dishes("unnest(ARRAY['A', 'B', 'C']) code, generate_series(1,1) n"));
-                await pool.query("INSERT INTO ssot.ingredientes (cod_ing, nombre, unidad, stock_actual) VALUES ('I1', 'First', 'g', 0), ('I2', 'Second', 'g', 0), ('I3', 'Unused', 'g', 0)");
+                await pool.query("INSERT INTO ssot.ingredientes (cod_ing, nombre, unidad) VALUES ('I1', 'First', 'g'), ('I2', 'Second', 'g'), ('I3', 'Unused', 'g')");
                 await pool.query("INSERT INTO ssot.recetas (cod_plato, cod_ing, cantidad) VALUES ('A','I1',8), ('A','I2',10), ('B','I1',6), ('B','I2',4)");
                 const root = await definition('platos');
                 const first = {source: 0, relationship: root.sources[0].relationships.find(edge => edge.entity === 'recetas').id, kind: 'inner'};

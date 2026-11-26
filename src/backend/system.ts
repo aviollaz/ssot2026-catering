@@ -54,8 +54,6 @@ const ingrediente = defineRecord(myTypes,{
     cod_ing       :{ type:'text', label: 'Código' },
     nombre        :{ type:'text', label: 'Ingrediente', isName: true, nullable: false },
     unidad        :{ type:'unidad', label: 'Unidad base', nullable: false },
-    // Editable by hand, which leaves no movement: Inventario shows the difference with the movement history.
-    stock_actual  :{ type:'cantidad', label: 'Stock actual', nullable: false },
     unidad_compra :{ type:'text', label: 'Unidad de compra' },
 })
 
@@ -101,18 +99,24 @@ const servicio_plato = defineRecord(myTypes,{
 
 const pedido = defineRecord(myTypes,{
     id               :{ type:'text', label: 'Código de pedido', writable: false as const, onCreate: 'uuid' as const },
+    // Null for a guest order, whose name and email are in pedido_invitados instead.
     cliente_id       :{ type:'text', label: 'Cuenta del cliente', writable: false as const, visible: false as const },
-    cliente_nombre   :{ type:'text', label: 'Cliente', isName: true, nullable: false },
-    cliente_email    :{ type:'text', label: 'Email', nullable: false, maxLength: 254 },
     cliente_telefono :{ type:'text', label: 'Teléfono', nullable: false },
     direccion        :{ type:'text', label: 'Dirección', nullable: false },
-    fecha_evento     :{ type:'fechaHora', label: 'Fecha del evento', nullable: false },
+    fecha_evento     :{ type:'fechaHora', label: 'Fecha del evento', isName: true, nullable: false },
     personas         :{ type:'posInteger', label: 'Personas', nullable: false },
     estado           :{ type:'estadoPedido', label: 'Estado', nullable: false },
     cod_servicio     :{ type:'text', label: 'Servicio' },
     total            :{ type:'posInteger', label: 'Total', nullable: false },
     observaciones    :{ type:'text', label: 'Observaciones' },
     creado           :{ type:'fechaHora', label: 'Creado', writable: false as const, onCreate: 'now' as const, nullable: false },
+})
+
+// Who placed a guest order. Once linked to an account, the row is removed and clientes has the data.
+const pedido_invitado = defineRecord(myTypes,{
+    pedido :{ type:'text', label: 'Pedido' },
+    nombre :{ type:'text', label: 'Cliente', isName: true, nullable: false },
+    email  :{ type:'text', label: 'Email', nullable: false, maxLength: 254 },
 })
 
 // Dishes and prices are copied into the order, so later menu or price changes do not alter it.
@@ -123,7 +127,7 @@ const pedido_plato = defineRecord(myTypes,{
     precio_porcion :{ type:'posInteger', label: 'Precio por porción', nullable: false },
 })
 
-// A stock movement. Its quantities per ingredient are the stock ledger; an Egreso also keeps the dishes made.
+// A stock movement. Its quantities per ingredient are the stock ledger: an ingredient's stock is their sum; an Egreso also keeps the dishes made.
 const movimiento = defineRecord(myTypes,{
     id            :{ type:'text', label: 'Código', writable: false as const, onCreate: 'uuid' as const },
     fecha         :{ type:'fechaHora', label: 'Fecha', isName: true, nullable: false },
@@ -170,10 +174,10 @@ const cliente = defineRecord(myTypes, {
         onCreate: 'uuid' as const, onUpdate: 'uuid' as const},
 });
 
-export const myRecords = withRecords(myTypes, {ingrediente, unidad_medida, plato, receta, servicio, servicio_plato, pedido, pedido_plato,
+export const myRecords = withRecords(myTypes, {ingrediente, unidad_medida, plato, receta, servicio, servicio_plato, pedido, pedido_invitado, pedido_plato,
     movimiento, movimiento_plato, movimiento_ingrediente, usuario, cliente})
 
-function validarPedido(pedido:{personas?:number | null, cliente_email?:string | null}){
+function validarPedido(pedido:{personas?:number | null}){
     var problemas: Problem[] = []
     if (pedido.personas != null && pedido.personas < 1) problemas.push({
         field: 'personas',
@@ -181,8 +185,13 @@ function validarPedido(pedido:{personas?:number | null, cliente_email?:string | 
         severity: 'regular',
         details: {}
     } satisfies Problem)
-    if (pedido.cliente_email != null && !/^[^@\s]+@[^@\s]+$/.test(pedido.cliente_email)) problemas.push({
-        field: 'cliente_email',
+    return problemas;
+}
+
+function validarInvitado(invitado:{email?:string | null}){
+    var problemas: Problem[] = []
+    if (invitado.email != null && !/^[^@\s]+@[^@\s]+$/.test(invitado.email)) problemas.push({
+        field: 'email',
         messageKey: 'el email del cliente no es válido',
         severity: 'regular',
         details: {}
@@ -201,7 +210,7 @@ function validarMovimiento(movimiento:{tipo?:string | null, pedido?:string | nul
     return problemas;
 }
 
-export const myContext = withValidators(myRecords, {validarPedido, validarMovimiento})
+export const myContext = withValidators(myRecords, {validarPedido, validarInvitado, validarMovimiento})
 
 const ingredientes = defineEntity(myContext, {
     name: 'ingredientes',
@@ -253,6 +262,14 @@ const pedidos = defineEntity(myContext, {
     validators: ['validarPedido']
 })
 
+const pedido_invitados = defineEntity(myContext, {
+    name: 'pedido_invitados',
+    record: 'pedido_invitado',
+    pk: ['pedido'],
+    fks: {pedido: {entity: 'pedidos', fields: {pedido: 'id'}}},
+    validators: ['validarInvitado']
+})
+
 const pedido_platos = defineEntity(myContext, {
     name: 'pedido_platos',
     record: 'pedido_plato',
@@ -298,12 +315,12 @@ const clientes = defineEntity(myContext, {
     uks: {email_unico: ['email']},
 });
 
-export const myEntities = defineEntities({pedidos, pedido_platos, platos, recetas, ingredientes, unidades, servicios, servicio_platos,
+export const myEntities = defineEntities({pedidos, pedido_invitados, pedido_platos, platos, recetas, ingredientes, unidades, servicios, servicio_platos,
     movimientos, movimiento_platos, movimiento_ingredientes, usuarios, clientes})
 
 // Presentation is app-owned metadata; browsers receive it through the API.
 export const entityLabels = {
-    pedidos: 'Pedidos', pedido_platos: 'Platos por pedido', platos: 'Platos', recetas: 'Recetas',
+    pedidos: 'Pedidos', pedido_invitados: 'Pedidos sin cuenta', pedido_platos: 'Platos por pedido', platos: 'Platos', recetas: 'Recetas',
     ingredientes: 'Ingredientes', unidades: 'Unidades', servicios: 'Servicios', servicio_platos: 'Platos por servicio',
     movimientos: 'Movimientos de stock', movimiento_platos: 'Platos por movimiento', movimiento_ingredientes: 'Ingredientes por movimiento',
     usuarios: 'Administradores', clientes: 'Clientes',
@@ -312,12 +329,12 @@ export const entityLabels = {
 // Area of each sheet in the ☰ menu; "Area/Subarea" nests one inside another.
 export const entityAreas = {
     pedidos: 'Ventas', servicios: 'Ventas', platos: 'Cocina', ingredientes: 'Cocina', unidades: 'Cocina',
-    movimientos: 'Inventario', recetas: 'Avanzado', servicio_platos: 'Avanzado', pedido_platos: 'Avanzado',
+    movimientos: 'Inventario', recetas: 'Avanzado', servicio_platos: 'Avanzado', pedido_invitados: 'Avanzado', pedido_platos: 'Avanzado',
     movimiento_platos: 'Avanzado', movimiento_ingredientes: 'Avanzado', usuarios: 'Avanzado', clientes: 'Avanzado',
 } satisfies Record<keyof typeof myEntities, string>;
 
-// The stock history: shown, but never edited or deleted through the generic sheet.
-export const readOnlyEntities: readonly (keyof typeof myEntities)[] = ['movimientos', 'movimiento_platos', 'movimiento_ingredientes'];
+// Sheets shown but never edited or deleted through the generic sheet.
+export const readOnlyEntities: readonly (keyof typeof myEntities)[] = [];
 
 const snapshot = captureSystemSnapshot(myContext, {
     systemId: 'ssot2026',

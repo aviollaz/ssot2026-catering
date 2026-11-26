@@ -4,6 +4,8 @@ import type {StoredRow} from './api-contract.js';
 type Plato = StoredRow<'platos'>;
 type Servicio = StoredRow<'servicios'>;
 type Pedido = StoredRow<'pedidos'>;
+// Guest orders keep them in pedido_invitados; account orders read them from clientes.
+type Contacto = {cliente_nombre: string; cliente_email: string};
 
 // Public, without login: only fields a customer may see.
 export type CatalogoPlato = Pick<Plato, 'cod_plato' | 'nombre' | 'descripcion' | 'categoria' | 'precio_porcion'>;
@@ -12,7 +14,7 @@ export type CatalogoServicio = Pick<Servicio, 'cod_servicio' | 'nombre' | 'descr
 };
 export type CatalogoResponse = {platos: CatalogoPlato[]; servicios: CatalogoServicio[]; anticipacionDias: number};
 
-export type PedidoCliente = Pick<Pedido, 'cliente_nombre' | 'cliente_email' | 'cliente_telefono' | 'direccion' |
+export type PedidoCliente = Contacto & Pick<Pedido, 'cliente_telefono' | 'direccion' |
     'fecha_evento' | 'personas' | 'observaciones'>;
 // Either a service or an à la carte list of dishes.
 export type NuevoPedido = PedidoCliente & ({cod_servicio: string} | {platos: {cod_plato: string; porciones: number}[]});
@@ -20,7 +22,7 @@ export type NuevoPedidoResponse = {id: string; total: number};
 export type EstadoPedidoResponse = Pick<Pedido, 'estado' | 'fecha_evento' | 'personas' | 'total'>;
 export type PedidoCuenta = Pick<Pedido, 'id' | 'estado' | 'fecha_evento' | 'personas' | 'total'>;
 export type PedidoLinkResponse = {associated: boolean};
-export type PedidoRepeticion = Pick<Pedido, 'cliente_nombre' | 'cliente_email' | 'cliente_telefono' | 'direccion' |
+export type PedidoRepeticion = Contacto & Pick<Pedido, 'cliente_telefono' | 'direccion' |
     'personas' | 'observaciones' | 'cod_servicio'> & {
     platos: {cod_plato: string; porciones: number}[];
 };

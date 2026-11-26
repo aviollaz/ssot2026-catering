@@ -15,7 +15,7 @@ test('theme preferences, row edits and sessions survive navigation and live inva
         await pool.query("INSERT INTO ssot.unidades (cod_unidad, nombre, base, factor) VALUES ('U001', 'Original', 'g', 1)");
         await pool.query(`INSERT INTO ssot.platos (cod_plato, nombre, descripcion, categoria, porciones_receta, precio_porcion, activo)
             VALUES ('EMP', 'Empanadas', NULL, 'Finger food', 12, 900, true), ('TAR', 'Tarta', NULL, 'Finger food', 8, 1200, true)`);
-        await pool.query("INSERT INTO ssot.ingredientes (cod_ing, nombre, unidad, stock_actual) VALUES ('HAR', 'Harina', 'g', 1000)");
+        await pool.query("INSERT INTO ssot.ingredientes (cod_ing, nombre, unidad) VALUES ('HAR', 'Harina', 'g')");
         await pool.query("INSERT INTO ssot.recetas (cod_plato, cod_ing, cantidad) VALUES ('EMP', 'HAR', 500)");
         const app = express(), auth = createAuthentication(pool, 'browser-test-secret-with-at-least-32-bytes');
         const publish = registerEntityEvents(app, auth);

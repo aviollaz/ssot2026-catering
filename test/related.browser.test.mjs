@@ -15,8 +15,8 @@ test('related records page, cache and refresh through the real API', {timeout: 9
         await initializeUsers(pool, {username: 'browser', password: 'browser-test-password'});
         await pool.query(`INSERT INTO ssot.platos (cod_plato, nombre, descripcion, categoria, porciones_receta, precio_porcion, activo)
             VALUES ('EMP', 'Original', NULL, 'Finger food', 12, 900, true)`);
-        await pool.query(`INSERT INTO ssot.ingredientes (cod_ing, nombre, unidad, stock_actual)
-            SELECT 'I' || lpad(n::text, 3, '0'), 'Ingrediente ' || n, 'g', 0 FROM generate_series(1, 202) n`);
+        await pool.query(`INSERT INTO ssot.ingredientes (cod_ing, nombre, unidad)
+            SELECT 'I' || lpad(n::text, 3, '0'), 'Ingrediente ' || n, 'g' FROM generate_series(1, 202) n`);
         await pool.query(`INSERT INTO ssot.recetas (cod_plato, cod_ing, cantidad)
             SELECT 'EMP', cod_ing, 500 FROM ssot.ingredientes WHERE cod_ing <> 'I202'`);
         const app = express(), auth = createAuthentication(pool, 'browser-test-secret-with-at-least-32-bytes');

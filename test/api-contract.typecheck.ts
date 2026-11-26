@@ -8,7 +8,7 @@ export type RequiredPrimaryKey = Assert<Equal<EntityRow<'recetas'>['cod_plato'],
 export type RequiredIngredientKey = Assert<Equal<EntityRow<'recetas'>['cod_ing'], string>>;
 export type NullableText = Assert<Equal<EntityRow<'platos'>['descripcion'], string | null>>;
 export type RequiredBoolean = Assert<Equal<EntityRow<'platos'>['activo'], boolean>>;
-export type RequiredInteger = Assert<Equal<EntityRow<'ingredientes'>['stock_actual'], number>>;
+export type RequiredInteger = Assert<Equal<EntityRow<'platos'>['precio_porcion'], number>>;
 export type ColumnLiteral = Assert<Equal<Extract<EntityColumn<'platos'>, {name: 'activo'}>['type'], 'boolean'>>;
 export type MinimumMetadata = Assert<Equal<keyof EntityColumn<'platos'>, 'name' | 'label' | 'type' | 'nullable' | 'writable' | 'constraints'>>;
 export type PrimaryKey = Assert<Equal<keyof EntityKey<'recetas'>, 'cod_plato' | 'cod_ing'>>;
@@ -25,7 +25,7 @@ export const invalidState: EntityRow<'pedidos'>['estado'] = 'pendiente';
 export const invalidUnit: EntityRow<'ingredientes'>['unidad'] = 'kg';
 export type EntityAndRowsStayTogether = Assert<Equal<Extract<EntityResponse, {name: 'ingredientes'}>['rows'][number], EntityRow<'ingredientes'>>>;
 export type DependencyKeysStayWithEntity = Assert<Equal<Extract<DeleteDependencyBlocker, {entity: 'recetas'}>['keys'][number], EntityKey<'recetas'>>>;
-export const orderReference: EntityForeignKey = {name: 'pedido', entity: 'pedidos', fields: {pedido: 'id'}, displayFields: ['id', 'cliente_nombre']};
+export const orderReference: EntityForeignKey = {name: 'pedido', entity: 'pedidos', fields: {pedido: 'id'}, displayFields: ['id', 'fecha_evento']};
 // @ts-expect-error Reference labels cannot expose private password hashes.
 export const secretReference: EntityForeignKey = {name: 'user', entity: 'usuarios', fields: {user: 'id'}, displayFields: ['contrasena_hash']};
 // @ts-expect-error Entity names come from the SSOT.
@@ -55,7 +55,7 @@ void checkDeleteDependencies('a-new-table', [{new_key: 1}]);
 // @ts-expect-error Query columns belong to the selected entity.
 export const wrongSort: EntityQuery<'ingredientes'> = {sort: 'usuario'};
 // @ts-expect-error Equality filters preserve SSOT value types.
-export const wrongFilter: EntityQuery<'ingredientes'> = {where: {stock_actual: '1'}};
+export const wrongFilter: EntityQuery<'platos'> = {where: {precio_porcion: '1'}};
 // @ts-expect-error Bulk keys require every component.
 export const incompleteKey: EntityKey<'recetas'> = {cod_plato: 'EMP'};
 

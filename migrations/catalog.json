@@ -65,6 +65,21 @@
       "systemId": "ssot2026",
       "releaseId": "0012_customer_profiles",
       "releaseHash": "2b9745520823542cfed505c80ac9a7230d17b670019e429b51cef168641bd1e2"
+    },
+    {
+      "systemId": "ssot2026",
+      "releaseId": "0013_update_schema",
+      "releaseHash": "95ce375299ad58e719a0462e8c7a4e3ef0c0ee44fb16b78a2e48fec35d16fb4a"
+    },
+    {
+      "systemId": "ssot2026",
+      "releaseId": "0014_move_contact_and_stock",
+      "releaseHash": "b582b0164e8587fcdb9806bb4a0e0125193f422f7ee359aa51a9d690deb0bd47"
+    },
+    {
+      "systemId": "ssot2026",
+      "releaseId": "0015_update_schema",
+      "releaseHash": "6eec39cfeb58878bc3dff54c2b85d714cb4abca9f1a022b9a55c00acc0344748"
     }
   ],
   "migrations": [
@@ -1759,6 +1774,157 @@
         "after": []
       },
       "migrationHash": "aaa8805478201bfa233037388fb373b9c92f879299cf64c03f5359454d24aa9b"
+    },
+    {
+      "migration": {
+        "id": "0013_update_schema",
+        "from": {
+          "systemId": "ssot2026",
+          "releaseId": "0012_customer_profiles",
+          "releaseHash": "2b9745520823542cfed505c80ac9a7230d17b670019e429b51cef168641bd1e2"
+        },
+        "to": {
+          "systemId": "ssot2026",
+          "releaseId": "0013_update_schema",
+          "releaseHash": "95ce375299ad58e719a0462e8c7a4e3ef0c0ee44fb16b78a2e48fec35d16fb4a"
+        },
+        "description": "",
+        "before": [],
+        "steps": [
+          {
+            "id": "001_add_table_pedido_invitados",
+            "run": {
+              "name": "001_add_table_pedido_invitados.sql",
+              "kind": "sql",
+              "contentHash": "38eff48ede35bec288816ac5f7c994d93d660b5545a213d4b7d521eab212f30c"
+            }
+          },
+          {
+            "id": "002_add_column_pedido_invitados_email",
+            "run": {
+              "name": "002_add_column_pedido_invitados_email.sql",
+              "kind": "sql",
+              "contentHash": "e705aad835ca99867f65ff026839f24e03f8c2e239c3880877759ebf368aa2d3"
+            }
+          },
+          {
+            "id": "003_add_column_pedido_invitados_nombre",
+            "run": {
+              "name": "003_add_column_pedido_invitados_nombre.sql",
+              "kind": "sql",
+              "contentHash": "256ac3a970c0d4750021ff2c4ad90bef0ad3fd1393dab1362b8db4999528c1d0"
+            }
+          },
+          {
+            "id": "004_add_column_pedido_invitados_pedido",
+            "run": {
+              "name": "004_add_column_pedido_invitados_pedido.sql",
+              "kind": "sql",
+              "contentHash": "d2b7b320db2c42c388dd5becb867e99af922afb6d152c8e4a7ff29e822c297d5"
+            }
+          },
+          {
+            "id": "005_add_constraint_pedido_invitados_pedido_invitados_pkey",
+            "run": {
+              "name": "005_add_constraint_pedido_invitados_pedido_invitados_pkey.sql",
+              "kind": "sql",
+              "contentHash": "234160162bbe8c0ec05ae1ff2f784bcf3df1741b27cbdd117bdc0ca131209dc9"
+            }
+          },
+          {
+            "id": "006_add_constraint_pedido_invitados_pedido_invitados_pedido_fkey",
+            "run": {
+              "name": "006_add_constraint_pedido_invitados_pedido_invitados_pedido_fkey.sql",
+              "kind": "sql",
+              "contentHash": "c8ff2124ee5968dc57eb2397be6c18e920e1f0b4bcfdea0f13d2e3028cc7ffa6"
+            }
+          },
+          {
+            "id": "app-permissions",
+            "run": {
+              "name": "app-permissions.sql",
+              "kind": "sql",
+              "contentHash": "64bef8a58ffa05ddd0a453e74eb22cbe14ea958e84fd44a11528c9e4e903628a"
+            }
+          }
+        ],
+        "after": []
+      },
+      "migrationHash": "98861c49bb0d9cd6cbfccbd1440d438e19cf6f62b1b2eb47305d557f64c6b68e"
+    },
+    {
+      "migration": {
+        "id": "0014_move_contact_and_stock",
+        "from": {
+          "systemId": "ssot2026",
+          "releaseId": "0013_update_schema",
+          "releaseHash": "95ce375299ad58e719a0462e8c7a4e3ef0c0ee44fb16b78a2e48fec35d16fb4a"
+        },
+        "to": {
+          "systemId": "ssot2026",
+          "releaseId": "0014_move_contact_and_stock",
+          "releaseHash": "b582b0164e8587fcdb9806bb4a0e0125193f422f7ee359aa51a9d690deb0bd47"
+        },
+        "description": "",
+        "before": [],
+        "steps": [
+          {
+            "id": "move-contact-and-stock",
+            "run": {
+              "name": "move_contact_and_stock.sql",
+              "kind": "sql",
+              "contentHash": "eccc452bfe74647876f51851b4156b5b3489ee5ff230118a085ebeb3ecf57b70"
+            }
+          }
+        ],
+        "after": []
+      },
+      "migrationHash": "a3ba44aa5f3443904fa1174ee05f18487497124323566cc90864785fbc0013ba"
+    },
+    {
+      "migration": {
+        "id": "0015_update_schema",
+        "from": {
+          "systemId": "ssot2026",
+          "releaseId": "0014_move_contact_and_stock",
+          "releaseHash": "b582b0164e8587fcdb9806bb4a0e0125193f422f7ee359aa51a9d690deb0bd47"
+        },
+        "to": {
+          "systemId": "ssot2026",
+          "releaseId": "0015_update_schema",
+          "releaseHash": "6eec39cfeb58878bc3dff54c2b85d714cb4abca9f1a022b9a55c00acc0344748"
+        },
+        "description": "",
+        "before": [],
+        "steps": [
+          {
+            "id": "001_remove_column_ingredientes_stock_actual",
+            "run": {
+              "name": "001_remove_column_ingredientes_stock_actual.sql",
+              "kind": "sql",
+              "contentHash": "c1e2f16cd78bc8ea44317ede1cca0cb0a109cef5a52d0510efeb77e656665d83"
+            }
+          },
+          {
+            "id": "002_remove_column_pedidos_cliente_email",
+            "run": {
+              "name": "002_remove_column_pedidos_cliente_email.sql",
+              "kind": "sql",
+              "contentHash": "6c0b028e18ac431fc29546fcf7aa003bf5f4ed3a5e48c2617ae593294b770597"
+            }
+          },
+          {
+            "id": "003_remove_column_pedidos_cliente_nombre",
+            "run": {
+              "name": "003_remove_column_pedidos_cliente_nombre.sql",
+              "kind": "sql",
+              "contentHash": "051e58baa86a23aa77924ec9682cf7f173c57e33cf6579e624ca2c2b6fc3d51a"
+            }
+          }
+        ],
+        "after": []
+      },
+      "migrationHash": "5c5f45b372c421d63d2a53e3f6c12ecc065b02627982bdf7f33acc4bcb465abe"
     }
   ]
 }
