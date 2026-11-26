@@ -4,6 +4,33 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
 const delay = () => new Promise(resolve => setTimeout(resolve, 100));
+
+// Adapted from PR #34: readable page actions shared by browser suites.
+export function pageActions({send, evaluate}) {
+    // Runs `fn` inside the page. It cannot see test variables: pass them as arguments.
+    const inPage = (fn, ...args) => evaluate(`return (${fn})(...${JSON.stringify(args)})`);
+    const waitFor = async (fn, ...args) => {
+        try { await until(() => inPage(fn, ...args)); }
+        catch (error) { throw error.message.startsWith('Timed out') ? new Error(`Timed out waiting for: ${fn}`) : error; }
+    };
+    const resize = (width, height) => send('Emulation.setDeviceMetricsOverride', {width, height, deviceScaleFactor: 1, mobile: width < 1000});
+    const click = selector => waitFor(selector => {
+        const target = document.querySelector(selector);
+        if (!target || target.matches(':disabled') || target.closest('[inert]')) return false;
+        target.click();
+        return true;
+    }, selector);
+    const setValue = (selector, value) => inPage((selector, value) => { document.querySelector(selector).value = value; }, selector, value);
+    const submit = selector => inPage(selector => document.querySelector(selector).requestSubmit(), selector);
+    const valueOf = selector => inPage(selector => document.querySelector(selector).value, selector);
+    const textOf = selector => inPage(selector => document.querySelector(selector).textContent, selector);
+    const isVisible = selector => inPage(selector => !document.querySelector(selector).hidden, selector);
+    const focusedId = () => inPage(() => document.activeElement.id);
+    const dialogIsOpen = () => inPage(() => !!document.querySelector('dialog[open]'));
+    const rowCount = () => inPage(() => document.querySelectorAll('tbody tr').length);
+    return {inPage, waitFor, resize, click, setValue, submit, valueOf, textOf, isVisible, focusedId, dialogIsOpen, rowCount};
+}
+
 export async function until(check) {
     const deadline = Date.now() + 15000;
     while (Date.now() < deadline) {
@@ -14,9 +41,10 @@ export async function until(check) {
 }
 
 // BROWSER_BIN points to a Chromium browser; no browser automation dependency.
-export async function withBrowser(run) {
+export async function withBrowser(run, {profile: existingProfile} = {}) {
     if (!process.env.BROWSER_BIN) throw new Error('Set BROWSER_BIN to a Chromium browser executable.');
-    const profile = await mkdtemp(join(tmpdir(), 'ssot-browser-'));
+    const profile = existingProfile ?? await mkdtemp(join(tmpdir(), 'ssot-browser-'));
+    if (existingProfile) await rm(join(profile, 'DevToolsActivePort'), {force: true});
     const browser = spawn(process.env.BROWSER_BIN, ['--headless=new', '--disable-gpu', '--no-first-run',
         '--no-default-browser-check', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'],
     {windowsHide: true, stdio: 'ignore'});
@@ -25,8 +53,10 @@ export async function withBrowser(run) {
     try {
         let port;
         await until(async () => {
-            try { port = (await readFile(join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0]; return true; }
-            catch (error) { if (error.code !== 'ENOENT') throw error; return false; }
+            try {
+                port = Number((await readFile(join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0]);
+                return Number.isInteger(port) && port > 0;
+            } catch (error) { if (!['ENOENT', 'EBUSY'].includes(error.code)) throw error; return false; }
         });
         const targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
         socket = new WebSocket(targets.find(target => target.type === 'page').webSocketDebuggerUrl);
@@ -64,6 +94,6 @@ export async function withBrowser(run) {
         browser.kill();
         await exited;
         // This path is the exact temporary directory created above, outside the repository.
-        await rm(profile, {recursive: true, force: true, maxRetries: 20, retryDelay: 200});
+        if (!existingProfile) await rm(profile, {recursive: true, force: true, maxRetries: 20, retryDelay: 200});
     }
 }

@@ -1,10 +1,9 @@
 import type {Pool} from 'pg';
 import type {EntityInfo} from 'system-definition';
 import {instanceProblems} from 'system-definition';
-import {quotePgIdentifier as quote} from '@system-definition/postgres-migrations';
+import {sql, identifier, entityTable, joinSql, querySql} from './sql.js';
 import {myContext, sqlMapping} from './system.js';
 import {ApiFailure, readObject} from './api-errors.js';
-import {entityTable} from './entity-write.js';
 import {browsing} from './browsing.js';
 import type {EntityQuery, EntityWindow} from './api-contract.js';
 
@@ -22,36 +21,34 @@ export function readQuery(value: unknown, fields: Fields): EntityQuery {
     return {filter: filter.trim(), ...(sort === undefined ? {} : {sort}), direction, page: Number(page), where: equal} as EntityQuery;
 }
 
-// The filter and sort of a query as SQL, with values as parameters; shared by browsing and exports.
-export function querySql(fields: Fields, pk: readonly string[], query: EntityQuery, parameter: (value: unknown) => string) {
+export function queryPredicate(fields: Fields, query: EntityQuery, column: (name: string) => ReturnType<typeof identifier> = identifier) {
     const names = Object.keys(fields);
-    const predicates = Object.entries(query.where ?? {}).map(([field, value]) => `${quote(field)} IS NOT DISTINCT FROM ${parameter(value)}`);
+    const predicates = Object.entries(query.where ?? {}).map(([field, value]) => sql`${column(field)} IS NOT DISTINCT FROM ${value}`);
     if (query.filter) {
-        const search = parameter(query.filter);
-        predicates.push(`(${names.map(field => `strpos(lower(${quote(field)}::text), lower(${search})) > 0`).join(' OR ')})`);
+        predicates.push(sql`(${joinSql(names.map(field => sql`strpos(lower(${column(field)}::text), lower(${query.filter})) > 0`), sql` OR `)})`);
     }
-    const order = [...new Set([...(query.sort ? [query.sort] : []), ...pk])].map(field => {
-        return `${quote(field)}${sqlMapping[fields[field]!.type] === 'text' ? ' COLLATE "C"' : ''} ${field === query.sort ? query.direction ?? 'asc' : 'asc'} NULLS LAST`;
-    }).join(', ');
-    return {predicates, order};
+    return predicates.length ? joinSql(predicates, sql` AND `) : sql`TRUE`;
+}
+
+// Shared by browsing and exports.
+export function queryOrder(fields: Fields, pk: readonly string[], query: EntityQuery) {
+    return joinSql([...new Set([...(query.sort ? [query.sort] : []), ...pk])].map(field =>
+        sql`${identifier(field)}${sqlMapping[fields[field]!.type] === 'text' ? sql` COLLATE "C"` : sql``} ${field === query.sort && query.direction === 'desc' ? sql`desc` : sql`asc`} NULLS LAST`));
 }
 
 // Counts, rows and versions come from one PostgreSQL statement/snapshot.
 export async function queryEntity(pool: Pick<Pool, 'query'>, name: string, fields: Fields, pk: readonly string[], query: EntityQuery) {
-    const values: unknown[] = [];
-    const parameter = (value: unknown) => { values.push(value); return `$${values.length}`; };
-    const names = Object.keys(fields);
-    const {predicates, order} = querySql(fields, pk, query, parameter);
-    const page = parameter(query.page ?? 1);
-    const result = await pool.query<{rows: Record<string, unknown>[]; versions: string[]; total: number; matched: number; page: number}>(
-        `WITH stats AS (SELECT count(*)::int AS total, count(*) FILTER (WHERE ${predicates.join(' AND ') || 'TRUE'})::int AS matched FROM ${entityTable(name)}), ` +
-        `position AS (SELECT total, matched, LEAST(${page}::int, GREATEST(1, ceil(matched::numeric / ${browsing.pageSize})::int)) AS page FROM stats), ` +
-        `selected AS (SELECT ${names.map(quote).join(', ')}, xmin::text AS "__version" FROM ${entityTable(name)} ` +
-        `WHERE (SELECT total <= ${browsing.clientRows} FROM stats) OR (${predicates.join(' AND ') || 'TRUE'}) ORDER BY ${order} ` +
-        `LIMIT (SELECT CASE WHEN total <= ${browsing.clientRows} THEN ${browsing.clientRows} ELSE ${browsing.pageSize} END FROM stats) ` +
-        `OFFSET (SELECT CASE WHEN total <= ${browsing.clientRows} THEN 0 ELSE (page - 1) * ${browsing.pageSize} END FROM position)) ` +
-        `SELECT total, matched, page, COALESCE((SELECT json_agg(to_jsonb(selected) - '__version') FROM selected), '[]') AS rows, ` +
-        `COALESCE((SELECT json_agg("__version") FROM selected), '[]') AS versions FROM position`, values);
+    const predicate = queryPredicate(fields, query);
+    const order = queryOrder(fields, pk, query);
+    const result = await querySql<{rows: Record<string, unknown>[]; versions: string[]; total: number; matched: number; page: number}>(pool,
+        sql`WITH stats AS (SELECT count(*)::int AS total, count(*) FILTER (WHERE ${predicate})::int AS matched FROM ${entityTable(name)}),
+        position AS (SELECT total, matched, LEAST(${query.page ?? 1}::int, GREATEST(1, ceil(matched::numeric / ${browsing.pageSize})::int)) AS page FROM stats),
+        selected AS (SELECT ${joinSql(Object.keys(fields).map(name => identifier(name)))}, xmin::text AS "__version" FROM ${entityTable(name)}
+        WHERE (SELECT total <= ${browsing.clientRows} FROM stats) OR (${predicate}) ORDER BY ${order}
+        LIMIT (SELECT CASE WHEN total <= ${browsing.clientRows} THEN ${browsing.clientRows}::int ELSE ${browsing.pageSize}::int END FROM stats)
+        OFFSET (SELECT CASE WHEN total <= ${browsing.clientRows} THEN 0 ELSE (page - 1) * ${browsing.pageSize} END FROM position))
+        SELECT total, matched, page, COALESCE((SELECT json_agg(to_jsonb(selected) - '__version') FROM selected), '[]') AS rows,
+        COALESCE((SELECT json_agg("__version") FROM selected), '[]') AS versions FROM position`);
     const data = result.rows[0]!;
     const window: EntityWindow = data.total <= browsing.clientRows ? {kind: 'complete'} : {kind: 'page', total: data.total, matched: data.matched, page: data.page};
     return {rows: data.rows, versions: data.versions, window};

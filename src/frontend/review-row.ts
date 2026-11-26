@@ -3,7 +3,7 @@ import type {Row, Value} from './row-editor.js';
 import {element} from './dom.js';
 
 // `details` are extra sections shown below the fields, such as the rows that reference this one.
-export function reviewRow(entity: EntityResponse, original: Row, draft: Readonly<Record<string, Value>>, current?: Row, ...details: Node[]): void {
+export function reviewRow(entity: EntityResponse, original: Row, draft: Readonly<Record<string, Value>>, current?: Row, ...details: Node[]): HTMLDialogElement {
     const dialog = element('dialog');
     dialog.className = 'review-dialog';
     dialog.append(element('h2', 'Revisar cambios'), element('p', 'Tu borrador se conserva. Actualizar la planilla permite cargar los datos actuales después de revisarlos.'));
@@ -24,7 +24,8 @@ export function reviewRow(entity: EntityResponse, original: Row, draft: Readonly
     close.type = 'button';
     close.onclick = () => dialog.close();
     dialog.onclose = () => dialog.remove();
-    dialog.append(table, ...details, close);
+    dialog.append(close, table, ...details);
     document.body.append(dialog);
     dialog.showModal();
+    return dialog;
 }
